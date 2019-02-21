@@ -103,7 +103,7 @@
             PREFIX ldp: &lt;http://www.w3.org/ns/ldp#&gt; 
             PREFIX pcdm: &lt;http://pcdm.org/models#&gt;
             INSERT {
-                &lt;&gt; a ldp:DirectContainer, pcdm:Object ;
+                &lt;&gt; a ldp:DirectContainer\,pcdm:Object ;
                 ldp:membershipResource &lt;[URL]&gt; ;
                 ldp:hasMemberRelation pcdm:hasMember .
             } 
@@ -115,7 +115,7 @@
             PREFIX ldp: &lt;http://www.w3.org/ns/ldp#&gt; 
             PREFIX pcdm: &lt;http://pcdm.org/models#&gt;
             INSERT {
-                &lt;&gt; a ldp:DirectContainer, pcdm:Object ;
+                &lt;&gt; a ldp:DirectContainer\,pcdm:Object ;
                 ldp:membershipResource &lt;[URL]&gt; ;
                 ldp:hasMemberRelation pcdm:hasFile .
             } 
