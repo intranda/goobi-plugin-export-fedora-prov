@@ -15,7 +15,7 @@
       }
       post {
         success {
-          archiveArtifacts artifacts: 'goobi-plugin-export-fedora-prov/target/*.jar, goobi-plugin-export-fedora-prov/plugin_prov_export_fedora.xml', fingerprint:
+          archiveArtifacts artifacts: '**/target/*.jar, */plugin_*.xml, plugin_*.xml', fingerprint: true, onlyIfSuccessful: true
           true
         }
       }
