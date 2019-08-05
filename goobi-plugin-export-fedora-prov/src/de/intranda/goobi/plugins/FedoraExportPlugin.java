@@ -114,6 +114,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
      *            previous versions will be deleted).
      */
     private boolean ingestData(Process process, String destination) {
+        boolean success = false;
 
         // get workflow name from properties
         String workflowName = null;
@@ -187,27 +188,35 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
         Response transactionResponse = null;
         try {
             transactionResponse = fedoraBase.path("fcr:tx").request().post(null);
+            if (transactionResponse == null || transactionResponse.getStatus() >= 400) {
+                Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
+                        transactionResponse.getStatusInfo().getReasonPhrase() + " - " + fedoraUrl);
+                Helper.setFehlerMeldung(null, String.valueOf(transactionResponse.getStatus()),
+                        transactionResponse.getStatusInfo().getReasonPhrase() + " - " + fedoraUrl);
+                return false;
+            }
         } catch (Exception e) {
             Helper.addMessageToProcessLog(process.getId(), LogType.ERROR, "The ingest into Fedora was not successful: " + e.getMessage());
             Helper.setFehlerMeldung(null, process.getTitel() + ": ", "The ingest into Fedora was not successful: " + e.getMessage());
             return false;
         }
 
-        if (transactionResponse.getStatus() < 400) {
-            // The base URL to work with (contains the transaction ID)
-            String transactionUrl = transactionResponse.getHeaderString("location");
-            WebTarget ingestLocation = client.target(transactionUrl);
+        // The base URL to work with (contains the transaction ID)
+        String transactionUrl = transactionResponse.getHeaderString("location");
+        WebTarget ingestLocation = client.target(transactionUrl);
 
-            // create url parts
-            String barcodePart1 = barcode.substring(0, 4);
-            String barcodePart2 = barcode.substring(4, 8);
-            String barcodePart3 = barcode.substring(8, 10);
-            String barcodePart4 = "images";
-            String barcodeUrl1 = transactionUrl + "/records/" + barcodePart1;
-            String barcodeUrl2 = barcodeUrl1 + "/" + barcodePart2;
-            String barcodeUrl3 = barcodeUrl2 + "/" + barcodePart3;
-            String barcodeUrl4 = barcodeUrl3 + "/" + barcodePart4;
+        // create url parts
+        String barcodePart1 = barcode.substring(0, 4);
+        String barcodePart2 = barcode.substring(4, 8);
+        String barcodePart3 = barcode.substring(8, 10);
+        String barcodePart4 = "images";
+        String barcodeUrl1 = transactionUrl + "/records/" + barcodePart1;
+        String barcodeUrl2 = barcodeUrl1 + "/" + barcodePart2;
+        String barcodeUrl3 = barcodeUrl2 + "/" + barcodePart3;
+        String barcodeUrl4 = barcodeUrl3 + "/" + barcodePart4;
 
+        // Transaction that will be rolled back if anything fails
+        try {
             // If not using versioning remove resource prior to ingesting to speed things up
             if (!useVersioning) {
                 WebTarget recordContainer =
@@ -261,160 +270,188 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             // Name for the new version, if using versioning
             String version = useVersioning ? "goobi-export." + formatter.print(System.currentTimeMillis()) : null;
 
-            try {
-                WebTarget recordUrl =
-                        ingestLocation.path("records").path(barcodePart1 + "/" + barcodePart2 + "/" + barcodePart3 + "/" + barcodePart4); // URL for the record folder
-                log.debug("record url: " + recordUrl.getUri().toString());
+            WebTarget recordUrl = ingestLocation.path("records").path(barcodePart1 + "/" + barcodePart2 + "/" + barcodePart3 + "/" + barcodePart4); // URL for the record folder
+            log.debug("record url: " + recordUrl.getUri().toString());
 
-                // now ingest all content files by order
-                // first collect all content files from all folders
+            // now ingest all content files by order
+            // first collect all content files from all folders
 
-                NIOFileUtils nfu = new NIOFileUtils();
-                List<Path> masterFileList = nfu.listFiles(process.getImagesOrigDirectory(false), ImageAndPdfFilter);
-                List<Path> mediaFileList = nfu.listFiles(process.getImagesTifDirectory(false), ImageAndPdfFilter);
-                List<Path> pdfFileList = nfu.listFiles(process.getImagesDirectory() + process.getTitel() + "_pdf", ImageAndPdfFilter);
-                List<Path> jp2FileList = nfu.listFiles(process.getImagesDirectory() + process.getTitel() + "_jp2", ImageAndPdfFilter);
+            NIOFileUtils nfu = new NIOFileUtils();
+            List<Path> masterFileList = nfu.listFiles(process.getImagesOrigDirectory(false), ImageAndPdfFilter);
+            List<Path> mediaFileList = nfu.listFiles(process.getImagesTifDirectory(false), ImageAndPdfFilter);
+            List<Path> pdfFileList = nfu.listFiles(process.getImagesDirectory() + process.getTitel() + "_pdf", ImageAndPdfFilter);
+            List<Path> jp2FileList = nfu.listFiles(process.getImagesDirectory() + process.getTitel() + "_jp2", ImageAndPdfFilter);
 
-                int max = masterFileList.size();
-                if (mediaFileList.size() > masterFileList.size()) {
-                    max = mediaFileList.size();
-                }
-                if (pdfFileList.size() > masterFileList.size()) {
-                    max = pdfFileList.size();
-                }
-                if (jp2FileList.size() > masterFileList.size()) {
-                    max = jp2FileList.size();
-                }
-                log.debug("Found " + max + " files");
+            int max = masterFileList.size();
+            if (mediaFileList.size() > masterFileList.size()) {
+                max = mediaFileList.size();
+            }
+            if (pdfFileList.size() > masterFileList.size()) {
+                max = pdfFileList.size();
+            }
+            if (jp2FileList.size() > masterFileList.size()) {
+                max = jp2FileList.size();
+            }
+            log.debug("Found " + max + " files");
 
-                for (int i = 0; i < max; i++) {
-                    Path masterFile = null;
-                    Path mediaFile = null;
-                    Path pdfFile = null;
-                    Path jp2File = null;
+            for (int i = 0; i < max; i++) {
+                Path masterFile = null;
+                Path mediaFile = null;
+                Path pdfFile = null;
+                Path jp2File = null;
 
-                    try {
-                        if (masterFileList.size() > i) {
-                            masterFile = masterFileList.get(i);
-                        }
-                        if (mediaFileList.size() > i) {
-                            mediaFile = mediaFileList.get(i);
-                        }
-                        if (jp2FileList.size() > i) {
-                            jp2File = jp2FileList.get(i);
-                        }
-                        if (pdfFileList.size() > i) {
-                            pdfFile = pdfFileList.get(i);
-                        }
-                    } catch (IndexOutOfBoundsException ioc) {
-                        // nothing happens here
+                try {
+                    if (masterFileList.size() > i) {
+                        masterFile = masterFileList.get(i);
                     }
+                    if (mediaFileList.size() > i) {
+                        mediaFile = mediaFileList.get(i);
+                    }
+                    if (jp2FileList.size() > i) {
+                        jp2File = jp2FileList.get(i);
+                    }
+                    if (pdfFileList.size() > i) {
+                        pdfFile = pdfFileList.get(i);
+                    }
+                } catch (IndexOutOfBoundsException ioc) {
+                    // nothing happens here
+                }
 
-                    // create container for this image
-                    String iValue = String.valueOf(i + 1);
-                    String imageNumberUrl = barcodeUrl4 + "/" + iValue;
-                    String filesUrl = imageNumberUrl + "/files";
-                    containerCreated = createContainer(imageNumberUrl);
-                    if (!containerCreated) {
+                // create container for this image
+                String iValue = String.valueOf(i + 1);
+                String imageNumberUrl = barcodeUrl4 + "/" + iValue;
+                String filesUrl = imageNumberUrl + "/files";
+                containerCreated = createContainer(imageNumberUrl);
+                if (!containerCreated) {
+                    Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
+                            "The ingest into Fedora was not successful (container creation for " + imageNumberUrl + ")");
+                    Helper.setFehlerMeldung(null, process.getTitel() + ": ",
+                            "The ingest into Fedora was not successful as the container could not be created for " + imageNumberUrl);
+                    return false;
+                }
+                containerCreated = createContainer(filesUrl);
+                if (!containerCreated) {
+                    Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
+                            "The ingest into Fedora was not successful (container creation for " + filesUrl + ")");
+                    Helper.setFehlerMeldung(null, process.getTitel() + ": ",
+                            "The ingest into Fedora was not successful as the container could not be created for " + filesUrl);
+                    return false;
+                }
+
+                // add /files container membership metadata
+                if (filesContainerMetadataQuery != null) {
+                    log.debug("Adding /files container metadata for file " + i);
+                    if (!addPropertyViaSparql(filesUrl, filesContainerMetadataQuery.replace("[URL]", imageNumberUrl))) {
                         Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
-                                "The ingest into Fedora was not successful (container creation for " + imageNumberUrl + ")");
+                                "The ingest into Fedora was not successful ([URL] property creation for " + imageNumberUrl + ")");
                         Helper.setFehlerMeldung(null, process.getTitel() + ": ",
-                                "The ingest into Fedora was not successful as the container could not be created for " + imageNumberUrl);
+                                "The ingest into Fedora was not successful ([URL] property creation for " + imageNumberUrl + ")");
                         return false;
                     }
-                    containerCreated = createContainer(filesUrl);
-                    if (!containerCreated) {
+                    // TODO add metadata rdf:type
+                    // TODO value: https://urldefense.proofpoint.com/v2/url?u=http-3A__pcdm.org_models-23Object&d=DwID-g&c=JnBkUqWXzx2bz-3a05d47Q&r=EEGRrm4Z8GH-zGshinHEIrcAhnouow98GQfr8zw1BZ4&m=4YXGRWKoNv-swVJLNBMEnrrtkGUfEz6dMSP1anqElvk&s=DNwiWXa-O30dZechpyPGgKent__3l65A8cm_HPgSKhU&e=
+                    // TODO value: https://urldefense.proofpoint.com/v2/url?u=http-3A__www.w3.org_ns_ldp-23DirectContainer&d=DwID-g&c=JnBkUqWXzx2bz-3a05d47Q&r=EEGRrm4Z8GH-zGshinHEIrcAhnouow98GQfr8zw1BZ4&m=4YXGRWKoNv-swVJLNBMEnrrtkGUfEz6dMSP1anqElvk&s=hkv1824dR7ukNf1AU4BESFY1m2m7u_PS2tvHrXG4CKg&e=
+
+                }
+
+                // define folder where to ingest
+                WebTarget target = recordUrl.path(iValue + "/files"); // URL for the folder with the correct image number
+
+                String fileUrl = null;
+                int[] imageDimensions = { 0, 0 };
+
+                // ingest master
+                if (ingestMaster && masterFile != null) {
+                    fileUrl = addFileResource(masterFile, target.path(masterFile.getFileName().toString()), version, transactionUrl);
+                    ingestLocation.path("fcr:tx").request().post(null);
+                    imageDimensions = getImageDimensions(masterFile);
+                }
+                // ingest media
+                if (ingestMedia && mediaFile != null) {
+                    fileUrl = addFileResource(mediaFile, target.path(mediaFile.getFileName().toString()), version, transactionUrl);
+                    ingestLocation.path("fcr:tx").request().post(null);
+                    imageDimensions = getImageDimensions(mediaFile);
+                }
+                // ingest pdf
+                if (ingestPdf && pdfFile != null) {
+                    fileUrl = addFileResource(pdfFile, target.path(pdfFile.getFileName().toString()), version, transactionUrl);
+                    ingestLocation.path("fcr:tx").request().post(null);
+                }
+                // ingest jp2
+                if (ingestJp2 && jp2File != null) {
+                    fileUrl = addFileResource(jp2File, target.path(jp2File.getFileName().toString()), version, transactionUrl);
+                    ingestLocation.path("fcr:tx").request().post(null);
+                    imageDimensions = getImageDimensions(jp2File);
+                }
+
+                if (fileUrl != null && imageFileMetadataQuery != null) {
+                    log.debug("Adding image dimensions metadata for file " + i);
+                    if (!addPropertyViaSparql(fileUrl + "/fcr:metadata", imageFileMetadataQuery.replace("[WIDTH]", String.valueOf(imageDimensions[0]))
+                            .replace("[HEIGHT]", String.valueOf(imageDimensions[1])))) {
                         Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
-                                "The ingest into Fedora was not successful (container creation for " + filesUrl + ")");
+                                "The ingest into Fedora was not successful ([WIDTH]/[HEIGHT] property creation for " + imageNumberUrl + ")");
                         Helper.setFehlerMeldung(null, process.getTitel() + ": ",
-                                "The ingest into Fedora was not successful as the container could not be created for " + filesUrl);
+                                "The ingest into Fedora was not successful ([WIDTH]/[HEIGHT] property creation for " + imageNumberUrl + ")");
                         return false;
                     }
-
-                    // add /files container membership metadata
-                    if (filesContainerMetadataQuery != null) {
-                        log.debug("Adding /files container metadata for file " + i);
-                        addPropertyViaSparql(filesUrl, filesContainerMetadataQuery.replace("[URL]", imageNumberUrl));
-                        // TODO add metadata rdf:type
-                        // TODO value: https://urldefense.proofpoint.com/v2/url?u=http-3A__pcdm.org_models-23Object&d=DwID-g&c=JnBkUqWXzx2bz-3a05d47Q&r=EEGRrm4Z8GH-zGshinHEIrcAhnouow98GQfr8zw1BZ4&m=4YXGRWKoNv-swVJLNBMEnrrtkGUfEz6dMSP1anqElvk&s=DNwiWXa-O30dZechpyPGgKent__3l65A8cm_HPgSKhU&e=
-                        // TODO value: https://urldefense.proofpoint.com/v2/url?u=http-3A__www.w3.org_ns_ldp-23DirectContainer&d=DwID-g&c=JnBkUqWXzx2bz-3a05d47Q&r=EEGRrm4Z8GH-zGshinHEIrcAhnouow98GQfr8zw1BZ4&m=4YXGRWKoNv-swVJLNBMEnrrtkGUfEz6dMSP1anqElvk&s=hkv1824dR7ukNf1AU4BESFY1m2m7u_PS2tvHrXG4CKg&e=
-
-                    }
-
-                    // define folder where to ingest
-                    WebTarget target = recordUrl.path(iValue + "/files"); // URL for the folder with the correct image number
-
-                    String fileUrl = null;
-                    int[] imageDimensions = { 0, 0 };
-
-                    // ingest master
-                    if (ingestMaster && masterFile != null) {
-                        fileUrl = addFileResource(masterFile, target.path(masterFile.getFileName().toString()), version, transactionUrl);
-                        ingestLocation.path("fcr:tx").request().post(null);
-                        imageDimensions = getImageDimensions(masterFile);
-                    }
-                    // ingest media
-                    if (ingestMedia && mediaFile != null) {
-                        fileUrl = addFileResource(mediaFile, target.path(mediaFile.getFileName().toString()), version, transactionUrl);
-                        ingestLocation.path("fcr:tx").request().post(null);
-                        imageDimensions = getImageDimensions(mediaFile);
-                    }
-                    // ingest pdf
-                    if (ingestPdf && pdfFile != null) {
-                        fileUrl = addFileResource(pdfFile, target.path(pdfFile.getFileName().toString()), version, transactionUrl);
-                        ingestLocation.path("fcr:tx").request().post(null);
-                    }
-                    // ingest jp2
-                    if (ingestJp2 && jp2File != null) {
-                        fileUrl = addFileResource(jp2File, target.path(jp2File.getFileName().toString()), version, transactionUrl);
-                        ingestLocation.path("fcr:tx").request().post(null);
-                        imageDimensions = getImageDimensions(jp2File);
-                    }
-
-                    if (fileUrl != null && imageFileMetadataQuery != null) {
-                        log.debug("Adding image dimensions metadata for file " + i);
-                        addPropertyViaSparql(fileUrl + "/fcr:metadata", imageFileMetadataQuery.replace("[WIDTH]", String.valueOf(imageDimensions[0]))
-                                .replace("[HEIGHT]", String.valueOf(imageDimensions[1])));
-                    }
                 }
+            }
 
-                // Add /image container membership metadata
-                String imagesContainerMetadataQuery = myconfig.getString("imagesContainerMetadataQuery");
-                if (imagesContainerMetadataQuery != null) {
-                    log.debug("Adding /images container metadata");
-                    addPropertyViaSparql(barcodeUrl4, imagesContainerMetadataQuery.replace("[URL]", barcodeUrl3));
+            // Add /image container membership metadata
+            String imagesContainerMetadataQuery = myconfig.getString("imagesContainerMetadataQuery");
+            if (imagesContainerMetadataQuery != null) {
+                log.debug("Adding /images container metadata");
+                if (!addPropertyViaSparql(barcodeUrl4, imagesContainerMetadataQuery.replace("[URL]", barcodeUrl3))) {
+                    Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
+                            "The ingest into Fedora was not successful ([URL] property creation for " + barcodeUrl3 + ")");
+                    Helper.setFehlerMeldung(null, process.getTitel() + ": ",
+                            "The ingest into Fedora was not successful ([URL] property creation for " + barcodeUrl3 + ")");
+                    return false;
                 }
+            }
 
-                // add crm url
-                if (externalLinkContent != null) {
-                    addPropertyViaSparql(barcodeUrl3, externalLinkContent.replace("[BARCODE]", barcode).replace("[UNIT_ITEM_CODE]", unit_Item_code));
+            // add crm url
+            if (externalLinkContent != null) {
+                if (!addPropertyViaSparql(barcodeUrl3,
+                        externalLinkContent.replace("[BARCODE]", barcode).replace("[UNIT_ITEM_CODE]", unit_Item_code))) {
+                    Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
+                            "The ingest into Fedora was not successful ([BARCODE]/[UNIT_ITEM_CODE] property creation for " + barcodeUrl3 + ")");
+                    Helper.setFehlerMeldung(null, process.getTitel() + ": ",
+                            "The ingest into Fedora was not successful ([BARCODE]/[UNIT_ITEM_CODE] property creation for " + barcodeUrl3 + ")");
+                    return false;
                 }
-                // add full_partial
-                if (fullPartialContent != null && full_partial != null) {
-                    addPropertyViaSparql(barcodeUrl3, fullPartialContent.replace("[FULL_PARTIAL]", full_partial));
+            }
+            // add full_partial
+            if (fullPartialContent != null && full_partial != null) {
+                if (!addPropertyViaSparql(barcodeUrl3, fullPartialContent.replace("[FULL_PARTIAL]", full_partial))) {
+                    Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
+                            "The ingest into Fedora was not successful ([FULL_PARTIAL] property creation for " + barcodeUrl3 + ")");
+                    Helper.setFehlerMeldung(null, process.getTitel() + ": ",
+                            "The ingest into Fedora was not successful ([FULL_PARTIAL] property creation for " + barcodeUrl3 + ")");
+                    return false;
                 }
+            }
 
-                // Finish the entire ingest by committing the transaction
-                ingestLocation.path("fcr:tx").path("fcr:commit").request().post(null);
-                Helper.addMessageToProcessLog(process.getId(), LogType.INFO, "Ingest into Fedora successfully finished.");
-                Helper.setMeldung(null, process.getTitel() + ": ", "ExportFinished");
-                return true;
-            } catch (IOException | DAOException | InterruptedException | SwapException e) {
-                // Roll back transaction, if anything fails
-                log.error(e.getMessage(), e);
+            // Finish the entire ingest by committing the transaction
+            ingestLocation.path("fcr:tx").path("fcr:commit").request().post(null);
+            Helper.addMessageToProcessLog(process.getId(), LogType.INFO, "Ingest into Fedora successfully finished.");
+            Helper.setMeldung(null, process.getTitel() + ": ", "ExportFinished");
+            success = true;
+            return true;
+        } catch (IOException | DAOException | InterruptedException | SwapException e) {
+            log.error(e.getMessage(), e);
+            Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
+                    "The ingest into Fedora was not successful and the transaction got rolled back: " + e.getMessage());
+            Helper.setFehlerMeldung(null, process.getTitel() + ": ",
+                    "The ingest into Fedora was not successful and the transaction got rolled back: " + e.getMessage());
+            return false;
+        } finally {
+            // Roll back transaction, if anything fails
+            if (!success) {
+                log.info("Rolling back transaction...");
                 ingestLocation.path("fcr:tx").path("fcr:rollback").request().post(null);
-                Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
-                        "The ingest into Fedora was not successful and the transaction got rolled back: " + e.getMessage());
-                Helper.setFehlerMeldung(null, process.getTitel() + ": ",
-                        "The ingest into Fedora was not successful and the transaction got rolled back: " + e.getMessage());
-                return false;
             }
         }
-
-        //        Helper.addMessageToProcessLog(process.getId(), LogType.ERROR, transactionResponse.getStatus());
-        Helper.setFehlerMeldung(null, String.valueOf(transactionResponse.getStatus()),
-                transactionResponse.getStatusInfo().getReasonPhrase() + " - " + fedoraUrl);
-        return false;
     }
 
     /**
@@ -577,6 +614,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                         String body = response.readEntity(String.class);
                         String msg = response.getStatus() + ": " + response.getStatusInfo().getReasonPhrase() + " - " + body;
                         log.error(msg);
+                        log.error(body);
                         throw new IOException(msg);
                     }
                     // Delete tombstone (DELETE operation)
@@ -584,22 +622,24 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                     if (response.getStatus() == 204) {
                         // Add file again (PUT operation)
                         // "Content-Disposition" attribute contains the file name
-                        response =
-                                target.request().header("Content-Disposition", "attachment; filename=\"" + file.getFileName().toString() + "\"").put(
-                                        fileEntity);
+                        response = target.request()
+                                .header("Content-Disposition", "attachment; filename=\"" + file.getFileName().toString() + "\"")
+                                .put(fileEntity);
                     } else {
                         // Error
                         String body = response.readEntity(String.class);
                         String msg = response.getStatus() + ": " + response.getStatusInfo().getReasonPhrase() + " - " + body;
                         log.error(msg);
+                        log.error(body);
                         throw new IOException(msg);
                     }
                 }
             } else {
                 // File does not exist yet, so just add it (PUT operation)
                 // "Content-Disposition" attribute contains the file name
-                response = target.request().header("Content-Disposition", "attachment; filename=\"" + file.getFileName().toString() + "\"").put(
-                        fileEntity);
+                response = target.request()
+                        .header("Content-Disposition", "attachment; filename=\"" + file.getFileName().toString() + "\"")
+                        .put(fileEntity);
             }
             // Handle response to the file adding operation (both versioned or not)
             switch (response.getStatus()) {
@@ -621,11 +661,15 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                 default:
                     // Error
                     String body = response.readEntity(String.class);
-                    log.error(response.getStatus() + ": " + response.getStatusInfo().getReasonPhrase() + " - " + body);
-                    break;
+                    log.error(body);
+                    throw new IOException(response.getStatus() + ": " + response.getStatusInfo().getReasonPhrase());
             }
 
             return response.getHeaderString("location");
+        } finally {
+            if (response != null) {
+                response.close();
+            }
         }
 
     }
@@ -716,7 +760,6 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
 
     @Override
     public List<String> getProblems() {
-        // TODO Auto-generated method stub
         return null;
     }
 

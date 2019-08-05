@@ -2,7 +2,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>de.intranda.goobi.plugins.export</groupId>
 	<artifactId>fedora</artifactId>
-	<version>1.0.0</version>
+	<version>1.0.1</version>
 	<properties>
 		<jar.name>plugin_intranda_export_fedora_prov</jar.name>
 		<dest.folder>/opt/digiverso/goobi/plugins/export/</dest.folder>
@@ -82,7 +82,7 @@
 		<dependency>
 			<groupId>de.intranda.goobi.workflow</groupId>
 			<artifactId>goobi-core-jar</artifactId>
-			<version>3.0</version>
+			<version>3.0.12</version>
 		</dependency>
 		<!-- https://mvnrepository.com/artifact/junit/junit -->
 		<dependency>
