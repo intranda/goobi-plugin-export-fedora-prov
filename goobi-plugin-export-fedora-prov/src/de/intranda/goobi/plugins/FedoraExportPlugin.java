@@ -434,6 +434,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
 
             // Finish the entire ingest by committing the transaction
             ingestLocation.path("fcr:tx").path("fcr:commit").request().post(null);
+            log.info("Ingest of '" + process.getTitel() + "' successfully finished.");
             Helper.addMessageToProcessLog(process.getId(), LogType.INFO, "Ingest into Fedora successfully finished.");
             Helper.setMeldung(null, process.getTitel() + ": ", "ExportFinished");
             success = true;
