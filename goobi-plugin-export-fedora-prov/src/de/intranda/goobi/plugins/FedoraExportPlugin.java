@@ -9,7 +9,9 @@ import java.net.URLConnection;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import javax.ws.rs.client.Client;
 import javax.ws.rs.client.ClientBuilder;
@@ -66,6 +68,11 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
     private static final Logger log = Logger.getLogger(FedoraExportPlugin.class);
 
     private static final String PLUGIN_NAME = "prov_export_fedora";
+
+    private static final String PROP_NAME_BARCODE = "barcode";
+    private static final String PROP_NAME_UNIT_ITEM_CODE = "unit_Item_code";
+    private static final String PROP_NAME_FULL_PARTIAL = "full_partial";
+    private static final String PROP_NAME_AVAILABLE = "available";
 
     private static String fedoraUrl;
 
@@ -139,6 +146,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
         rootUrl = fedoraUrl = myconfig.getString("fedoraUrl", "http://localhost:8080/fedora/rest");
         String externalLinkContent = myconfig.getString("externalLinkContent");
         String fullPartialContent = myconfig.getString("fullPartialContent");
+        String availableMetadataQuery = myconfig.getString("availableMetadataQuery");
         String filesContainerMetadataQuery = myconfig.getString("filesContainerMetadataQuery");
         String imageFileMetadataQuery = myconfig.getString("imageFileMetadataQuery");
         boolean useVersioning = myconfig.getBoolean("useVersioning", true);
@@ -147,23 +155,16 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
         boolean ingestJp2 = myconfig.getBoolean("ingestJp2", true);
         boolean ingestPdf = myconfig.getBoolean("ingestPdf", true);
 
-        String barcode = null;
-        String unit_Item_code = null;
-        String full_partial = null;
+        Map<String, String> properties = new HashMap<>(4);
         // get the barcode from the property list
         for (Processproperty prop : process.getEigenschaftenList()) {
-            if (prop.getTitel().equals("barcode")) {
-                barcode = prop.getWert();
+            if (prop.getTitel() == null) {
+                continue;
             }
-            if (prop.getTitel().equals("unit_Item_code")) {
-                unit_Item_code = prop.getWert();
-            }
-            if (prop.getTitel().equals("full_partial")) {
-                full_partial = prop.getWert();
-            }
+            properties.put(prop.getTitel(), prop.getWert());
         }
 
-        if (barcode == null) {
+        if (properties.get(PROP_NAME_BARCODE) == null) {
             Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                     "The ingest into Fedora was not successful as no barcode could be found in the properties.");
             Helper.setFehlerMeldung(null, process.getTitel() + ": ",
@@ -171,7 +172,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             return false;
         }
 
-        if (unit_Item_code == null || unit_Item_code.length() == 0) {
+        if (properties.get(PROP_NAME_UNIT_ITEM_CODE) == null || properties.get(PROP_NAME_UNIT_ITEM_CODE).length() == 0) {
             Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                     "The ingest into Fedora was not successful as no type could be found in the properties.");
             Helper.setFehlerMeldung(null, process.getTitel() + ": ",
@@ -179,7 +180,8 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             return false;
         }
 
-        unit_Item_code = unit_Item_code.toUpperCase().substring(0, 1) + unit_Item_code.toLowerCase().substring(1);
+        properties.put(PROP_NAME_UNIT_ITEM_CODE, properties.get(PROP_NAME_UNIT_ITEM_CODE).toUpperCase().substring(0, 1)
+                + properties.get(PROP_NAME_UNIT_ITEM_CODE).toLowerCase().substring(1));
 
         Client client = ClientBuilder.newClient();
         WebTarget fedoraBase = client.target(fedoraUrl);
@@ -206,9 +208,9 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
         WebTarget ingestLocation = client.target(transactionUrl);
 
         // create url parts
-        String barcodePart1 = barcode.substring(0, 4);
-        String barcodePart2 = barcode.substring(4, 8);
-        String barcodePart3 = barcode.substring(8, 10);
+        String barcodePart1 = properties.get(PROP_NAME_BARCODE).substring(0, 4);
+        String barcodePart2 = properties.get(PROP_NAME_BARCODE).substring(4, 8);
+        String barcodePart3 = properties.get(PROP_NAME_BARCODE).substring(8, 10);
         String barcodePart4 = "images";
         String barcodeUrl1 = transactionUrl + "/records/" + barcodePart1;
         String barcodeUrl2 = barcodeUrl1 + "/" + barcodePart2;
@@ -412,8 +414,8 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
 
             // add crm url
             if (externalLinkContent != null) {
-                if (!addPropertyViaSparql(barcodeUrl3,
-                        externalLinkContent.replace("[BARCODE]", barcode).replace("[UNIT_ITEM_CODE]", unit_Item_code))) {
+                if (!addPropertyViaSparql(barcodeUrl3, externalLinkContent.replace("[BARCODE]", properties.get(PROP_NAME_BARCODE))
+                        .replace("[UNIT_ITEM_CODE]", properties.get(PROP_NAME_UNIT_ITEM_CODE)))) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                             "The ingest into Fedora was not successful ([BARCODE]/[UNIT_ITEM_CODE] property creation for " + barcodeUrl3 + ")");
                     Helper.setFehlerMeldung(null, process.getTitel() + ": ",
@@ -422,12 +424,22 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                 }
             }
             // add full_partial
-            if (fullPartialContent != null && full_partial != null) {
-                if (!addPropertyViaSparql(barcodeUrl3, fullPartialContent.replace("[FULL_PARTIAL]", full_partial))) {
+            if (fullPartialContent != null && properties.get(PROP_NAME_FULL_PARTIAL) != null) {
+                if (!addPropertyViaSparql(barcodeUrl3, fullPartialContent.replace("[FULL_PARTIAL]", properties.get(PROP_NAME_FULL_PARTIAL)))) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                             "The ingest into Fedora was not successful ([FULL_PARTIAL] property creation for " + barcodeUrl3 + ")");
                     Helper.setFehlerMeldung(null, process.getTitel() + ": ",
                             "The ingest into Fedora was not successful ([FULL_PARTIAL] property creation for " + barcodeUrl3 + ")");
+                    return false;
+                }
+            }
+            // add available
+            if (availableMetadataQuery != null && properties.get(PROP_NAME_AVAILABLE) != null) {
+                if (!addPropertyViaSparql(barcodeUrl3, availableMetadataQuery.replace("[DATE_AVAILABLE]", properties.get(PROP_NAME_AVAILABLE)))) {
+                    Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
+                            "The ingest into Fedora was not successful ([DATE_AVAILABLE] property creation for " + barcodeUrl3 + ")");
+                    Helper.setFehlerMeldung(null, process.getTitel() + ": ",
+                            "The ingest into Fedora was not successful ([DATE_AVAILABLE] property creation for " + barcodeUrl3 + ")");
                     return false;
                 }
             }

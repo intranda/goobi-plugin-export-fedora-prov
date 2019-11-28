@@ -33,6 +33,15 @@
 	        WHERE { }
 	    </fullPartialContent>
 	    
+	    <!-- Optional property containing the public release date -->
+	    <availableMetadataQuery>
+            PREFIX dcterms: &lt;http://purl.org/dc/terms/&gt; 
+            INSERT {
+                &lt;&gt; dcterms:available "[DATE_AVAILABLE]" .
+            }
+            WHERE { }
+	    </availableMetadataQuery>
+	    
 	    <!-- Properties query for the /images container -->
 	    <imagesContainerMetadataQuery>
             PREFIX ldp: &lt;http://www.w3.org/ns/ldp#&gt; 
@@ -97,6 +106,15 @@
 	        INSERT { &lt;&gt; crm:P3_has_note "[FULL_PARTIAL]" } 
 	        WHERE { }
 	    </fullPartialContent>
+	    
+        <!-- Optional property containing the public release date -->
+        <availableMetadataQuery>
+            PREFIX dcterms: &lt;http://purl.org/dc/terms/&gt; 
+            INSERT {
+                &lt;&gt; dcterms:available "[DATE_AVAILABLE]" .
+            }
+            WHERE { }
+        </availableMetadataQuery>
 	    
         <!-- Properties query for the /images container -->
         <imagesContainerMetadataQuery>
