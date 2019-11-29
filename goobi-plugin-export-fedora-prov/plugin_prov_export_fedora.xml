@@ -12,6 +12,10 @@
 		<!-- general Fedora configuration data -->
 		<fedoraUrl>https://localhost:8888/fedora/rest</fedoraUrl>
 		<useVersioning>false</useVersioning>
+		<!-- Basic HTTP authentication user name (optional) -->
+		<userName></userName>
+		<!-- Basic HTTP authentication password (optional) -->
+		<password></password>
 
 		<!-- which content to ingest -->
 		<ingestMaster>true</ingestMaster>
@@ -33,7 +37,7 @@
 	        WHERE { }
 	    </fullPartialContent>
 	    
-	    <!-- Optional property containing the public release date -->
+	    <!-- Property containing the public release date (optional)-->
 	    <availableMetadataQuery>
             PREFIX dcterms: &lt;http://purl.org/dc/terms/&gt; 
             INSERT {
@@ -86,6 +90,10 @@
 		<!-- general Fedora configuration data -->
 		<fedoraUrl>https://localhost:8888/fedora/rest</fedoraUrl>
 		<useVersioning>true</useVersioning>
+        <!-- Basic HTTP authentication user name (optional) -->
+        <userName></userName>
+        <!-- Basic HTTP authentication password (optional) -->
+        <password></password>
 
 		<!-- which content to ingest -->
 		<ingestMaster>true</ingestMaster>

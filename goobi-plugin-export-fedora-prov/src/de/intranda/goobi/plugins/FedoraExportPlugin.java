@@ -25,13 +25,19 @@ import org.apache.commons.configuration.reloading.FileChangedReloadingStrategy;
 import org.apache.commons.configuration.tree.xpath.XPathExpressionEngine;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.http.HttpEntity;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.CredentialsProvider;
 import org.apache.http.client.entity.EntityBuilder;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPatch;
 import org.apache.http.client.methods.HttpPut;
 import org.apache.http.entity.ContentType;
+import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.log4j.Logger;
 import org.goobi.beans.Process;
@@ -62,7 +68,6 @@ import ugh.exceptions.TypeNotAllowedForParentException;
 import ugh.exceptions.WriteException;
 
 @PluginImplementation
-
 public class FedoraExportPlugin implements IExportPlugin, IPlugin {
 
     private static final Logger log = Logger.getLogger(FedoraExportPlugin.class);
@@ -77,8 +82,6 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
     private static String fedoraUrl;
 
     public static DateTimeFormatter formatter = DateTimeFormat.forPattern("yyyy-MM-dd_HH.mm.ss.SSS");
-
-    private String rootUrl;
 
     @Override
     public PluginType getType() {
@@ -143,7 +146,10 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
         }
 
         // now read from the right config area
-        rootUrl = fedoraUrl = myconfig.getString("fedoraUrl", "http://localhost:8080/fedora/rest");
+        fedoraUrl = myconfig.getString("fedoraUrl", "http://localhost:8080/fedora/rest");
+        String userName = myconfig.getString("userName");
+        String password = myconfig.getString("password");
+
         String externalLinkContent = myconfig.getString("externalLinkContent");
         String fullPartialContent = myconfig.getString("fullPartialContent");
         String availableMetadataQuery = myconfig.getString("availableMetadataQuery");
@@ -183,7 +189,13 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
         properties.put(PROP_NAME_UNIT_ITEM_CODE, properties.get(PROP_NAME_UNIT_ITEM_CODE).toUpperCase().substring(0, 1)
                 + properties.get(PROP_NAME_UNIT_ITEM_CODE).toLowerCase().substring(1));
 
+        // JAX-WS HTTP client
         Client client = ClientBuilder.newClient();
+        if (StringUtils.isNotEmpty(userName) && StringUtils.isNotEmpty(password)) {
+            log.info("Using configured HTTP cretentials.");
+            Helper.addMessageToProcessLog(process.getId(), LogType.INFO, "Using configured HTTP cretentials.");
+            client.register(new BasicHttpAuthenticator(userName, password));
+        }
         WebTarget fedoraBase = client.target(fedoraUrl);
 
         // Create a new transaction in Fedora (POST operation)
@@ -235,7 +247,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             }
 
             // Create the required container hierarchy for the process identifier
-            boolean containerCreated = createContainer(barcodeUrl1);
+            boolean containerCreated = createContainer(barcodeUrl1, userName, password);
             if (!containerCreated) {
                 Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                         "The ingest into Fedora was not successful (container creation for " + barcodeUrl1 + ")");
@@ -243,7 +255,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                         "The ingest into Fedora was not successful as the container could not be created for " + barcodeUrl1);
                 return false;
             }
-            containerCreated = createContainer(barcodeUrl2);
+            containerCreated = createContainer(barcodeUrl2, userName, password);
             if (!containerCreated) {
                 Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                         "The ingest into Fedora was not successful (container creation for " + barcodeUrl2 + ")");
@@ -251,7 +263,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                         "The ingest into Fedora was not successful as the container could not be created for " + barcodeUrl2);
                 return false;
             }
-            containerCreated = createContainer(barcodeUrl3);
+            containerCreated = createContainer(barcodeUrl3, userName, password);
             if (!containerCreated) {
                 Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                         "The ingest into Fedora was not successful (container creation for " + barcodeUrl3 + ")");
@@ -260,7 +272,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                 return false;
             }
 
-            containerCreated = createContainer(barcodeUrl4);
+            containerCreated = createContainer(barcodeUrl4, userName, password);
             if (!containerCreated) {
                 Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                         "The ingest into Fedora was not successful (container creation for " + barcodeUrl4 + ")");
@@ -323,7 +335,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                 String iValue = String.valueOf(i + 1);
                 String imageNumberUrl = barcodeUrl4 + "/" + iValue;
                 String filesUrl = imageNumberUrl + "/files";
-                containerCreated = createContainer(imageNumberUrl);
+                containerCreated = createContainer(imageNumberUrl, userName, password);
                 if (!containerCreated) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                             "The ingest into Fedora was not successful (container creation for " + imageNumberUrl + ")");
@@ -331,7 +343,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                             "The ingest into Fedora was not successful as the container could not be created for " + imageNumberUrl);
                     return false;
                 }
-                containerCreated = createContainer(filesUrl);
+                containerCreated = createContainer(filesUrl, userName, password);
                 if (!containerCreated) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                             "The ingest into Fedora was not successful (container creation for " + filesUrl + ")");
@@ -343,7 +355,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                 // add /files container membership metadata
                 if (filesContainerMetadataQuery != null) {
                     log.debug("Adding /files container metadata for file " + i);
-                    if (!addPropertyViaSparql(filesUrl, filesContainerMetadataQuery.replace("[URL]", imageNumberUrl))) {
+                    if (!addPropertyViaSparql(filesUrl, filesContainerMetadataQuery.replace("[URL]", imageNumberUrl), userName, password)) {
                         Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                                 "The ingest into Fedora was not successful ([URL] property creation for " + imageNumberUrl + ")");
                         Helper.setFehlerMeldung(null, process.getTitel() + ": ",
@@ -389,7 +401,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                 if (fileUrl != null && imageFileMetadataQuery != null) {
                     log.debug("Adding image dimensions metadata for file " + i);
                     if (!addPropertyViaSparql(fileUrl + "/fcr:metadata", imageFileMetadataQuery.replace("[WIDTH]", String.valueOf(imageDimensions[0]))
-                            .replace("[HEIGHT]", String.valueOf(imageDimensions[1])))) {
+                            .replace("[HEIGHT]", String.valueOf(imageDimensions[1])), userName, password)) {
                         Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                                 "The ingest into Fedora was not successful ([WIDTH]/[HEIGHT] property creation for " + imageNumberUrl + ")");
                         Helper.setFehlerMeldung(null, process.getTitel() + ": ",
@@ -403,7 +415,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             String imagesContainerMetadataQuery = myconfig.getString("imagesContainerMetadataQuery");
             if (imagesContainerMetadataQuery != null) {
                 log.debug("Adding /images container metadata");
-                if (!addPropertyViaSparql(barcodeUrl4, imagesContainerMetadataQuery.replace("[URL]", barcodeUrl3))) {
+                if (!addPropertyViaSparql(barcodeUrl4, imagesContainerMetadataQuery.replace("[URL]", barcodeUrl3), userName, password)) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                             "The ingest into Fedora was not successful ([URL] property creation for " + barcodeUrl3 + ")");
                     Helper.setFehlerMeldung(null, process.getTitel() + ": ",
@@ -415,7 +427,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             // add crm url
             if (externalLinkContent != null) {
                 if (!addPropertyViaSparql(barcodeUrl3, externalLinkContent.replace("[BARCODE]", properties.get(PROP_NAME_BARCODE))
-                        .replace("[UNIT_ITEM_CODE]", properties.get(PROP_NAME_UNIT_ITEM_CODE)))) {
+                        .replace("[UNIT_ITEM_CODE]", properties.get(PROP_NAME_UNIT_ITEM_CODE)), userName, password)) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                             "The ingest into Fedora was not successful ([BARCODE]/[UNIT_ITEM_CODE] property creation for " + barcodeUrl3 + ")");
                     Helper.setFehlerMeldung(null, process.getTitel() + ": ",
@@ -425,7 +437,8 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             }
             // add full_partial
             if (fullPartialContent != null && properties.get(PROP_NAME_FULL_PARTIAL) != null) {
-                if (!addPropertyViaSparql(barcodeUrl3, fullPartialContent.replace("[FULL_PARTIAL]", properties.get(PROP_NAME_FULL_PARTIAL)))) {
+                if (!addPropertyViaSparql(barcodeUrl3, fullPartialContent.replace("[FULL_PARTIAL]", properties.get(PROP_NAME_FULL_PARTIAL)), userName,
+                        password)) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                             "The ingest into Fedora was not successful ([FULL_PARTIAL] property creation for " + barcodeUrl3 + ")");
                     Helper.setFehlerMeldung(null, process.getTitel() + ": ",
@@ -435,7 +448,8 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             }
             // add available
             if (availableMetadataQuery != null && properties.get(PROP_NAME_AVAILABLE) != null) {
-                if (!addPropertyViaSparql(barcodeUrl3, availableMetadataQuery.replace("[DATE_AVAILABLE]", properties.get(PROP_NAME_AVAILABLE)))) {
+                if (!addPropertyViaSparql(barcodeUrl3, availableMetadataQuery.replace("[DATE_AVAILABLE]", properties.get(PROP_NAME_AVAILABLE)),
+                        userName, password)) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                             "The ingest into Fedora was not successful ([DATE_AVAILABLE] property creation for " + barcodeUrl3 + ")");
                     Helper.setFehlerMeldung(null, process.getTitel() + ": ",
@@ -697,29 +711,30 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
      * @param identifier
      * @return
      */
-    private static boolean createContainer(String url) {
-        try (CloseableHttpClient httpClient = HttpClients.createMinimal()) {
-            // Create proper (non-pairtree) container for the record identifier
-            HttpPut put = new HttpPut(url);
-            // Create container (PUT operation with no entity - an empty entity will create an empty file instead)
-            try (CloseableHttpResponse httpResponse = httpClient.execute(put); StringWriter writer = new StringWriter()) {
-                switch (httpResponse.getStatusLine().getStatusCode()) {
-                    case 201:
-                        // Container created
-                        log.info("Container created: " + url);
-                        break;
-                    case 204:
-                    case 409:
-                        // Container already exists
-                        log.debug("Container already exists: " + url);
-                        break;
-                    default:
-                        // Error
-                        String body = IOUtils.toString(httpResponse.getEntity().getContent(), "UTF-8");
-                        log.error(
-                                httpResponse.getStatusLine().getStatusCode() + ": " + httpResponse.getStatusLine().getReasonPhrase() + " - " + body);
-                        return false;
-                }
+    private static boolean createContainer(String url, String userName, String password) {
+        CredentialsProvider provider = Utils.getCredentialsProvider(userName, password);
+
+        // Create proper (non-pairtree) container for the record identifier
+        // Create container (PUT operation with no entity - an empty entity will create an empty file instead)
+        HttpPut put = new HttpPut(url);
+        try (CloseableHttpClient httpClient =
+                provider != null ? HttpClientBuilder.create().setDefaultCredentialsProvider(provider).build() : HttpClients.createMinimal();
+                CloseableHttpResponse httpResponse = httpClient.execute(put); StringWriter writer = new StringWriter()) {
+            switch (httpResponse.getStatusLine().getStatusCode()) {
+                case 201:
+                    // Container created
+                    log.info("Container created: " + url);
+                    break;
+                case 204:
+                case 409:
+                    // Container already exists
+                    log.debug("Container already exists: " + url);
+                    break;
+                default:
+                    // Error
+                    String body = IOUtils.toString(httpResponse.getEntity().getContent(), "UTF-8");
+                    log.error(httpResponse.getStatusLine().getStatusCode() + ": " + httpResponse.getStatusLine().getReasonPhrase() + " - " + body);
+                    return false;
             }
         } catch (IOException e) {
             log.error(e.getMessage(), e);
@@ -733,19 +748,21 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
      * Add cidoc crm URL for the images URL of the ingested data
      * 
      * @param rootUrl the images-container url to use
-     * @param barcode the barcode as identifier that is used inside of the target url
+     * @param content
+     * @param userName
+     * @param password
      * @return
      */
-    private static boolean addPropertyViaSparql(String rootUrl, String content) {
-        try {
-            CloseableHttpClient httpClient = HttpClients.createMinimal();
-            HttpPatch put = new HttpPatch(rootUrl);
+    private static boolean addPropertyViaSparql(String rootUrl, String content, String userName, String password) {
+        HttpPatch put = new HttpPatch(rootUrl);
+        ContentType ct = ContentType.create("application/sparql-update");
+        HttpEntity he = EntityBuilder.create().setText(content).setContentType(ct).build();
+        put.setEntity(he);
 
-            ContentType ct = ContentType.create("application/sparql-update");
-            HttpEntity he = EntityBuilder.create().setText(content).setContentType(ct).build();
-            put.setEntity(he);
-
-            CloseableHttpResponse httpResponse = httpClient.execute(put);
+        CredentialsProvider provider = Utils.getCredentialsProvider(userName, password);
+        try (CloseableHttpClient httpClient =
+                provider != null ? HttpClientBuilder.create().setDefaultCredentialsProvider(provider).build() : HttpClients.createMinimal();
+                CloseableHttpResponse httpResponse = httpClient.execute(put)) {
             log.debug("Status code for cidoc crm URL generation is: " + httpResponse.getStatusLine().getStatusCode());
 
             switch (httpResponse.getStatusLine().getStatusCode()) {
