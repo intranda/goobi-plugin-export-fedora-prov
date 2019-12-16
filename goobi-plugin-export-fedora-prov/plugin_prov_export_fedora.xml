@@ -29,6 +29,14 @@
 	        INSERT { &lt;&gt; crm:P70_documents &lt;http://access.prov.vic.gov.au/public/component/daPublicBaseContainer?component=daView[UNIT_ITEM_CODE]&amp;entityId=[BARCODE]#&gt; } 
 	        WHERE { }
 	    </externalLinkContent>
+	    
+	    <!-- command for specific property including the parameter for PID -->
+        <externalLinkContentPID>
+            PREFIX crm:&lt;http://www.cidoc-crm.org/cidoc-crm/&gt;
+            INSERT { &lt;&gt; crm:P70_documents &lt;http://hdl.handle.net/20.500.12189/[PID]#&gt; }
+            WHERE { }
+        </externalLinkContentPID>
+
 
 	    <!-- command for specific property including the parameter for full_partial -->
 		<fullPartialContent>
