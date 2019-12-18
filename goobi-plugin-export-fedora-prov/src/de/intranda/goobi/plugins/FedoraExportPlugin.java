@@ -75,7 +75,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
     private static final String PLUGIN_NAME = "prov_export_fedora";
 
     private static final String PROP_NAME_BARCODE = "barcode";
-    private static final String PROP_NAME_PID = "PID";
+    //    private static final String PROP_NAME_PID = "PID";
     private static final String PROP_NAME_UNIT_ITEM_CODE = "unit_Item_code";
     private static final String PROP_NAME_FULL_PARTIAL = "full_partial";
     private static final String PROP_NAME_AVAILABLE = "available";
@@ -174,9 +174,9 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
         }
 
         String barcodeOrPID = properties.get(PROP_NAME_BARCODE);
-        if (barcodeOrPID == null) {
-            barcodeOrPID = properties.get(PROP_NAME_PID);
-        }
+        //        if (barcodeOrPID == null) {
+        //            barcodeOrPID = properties.get(PROP_NAME_PID);
+        //        }
         if (barcodeOrPID == null) {
             Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                     "The ingest into Fedora was not successful as no barcode or PID could be found in the properties.");
@@ -238,16 +238,6 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
 
         IURLBuilder urlBuilder = usePID ? new PIDURLBuilder(transactionUrl, barcodeOrPID)
                 : new BarcodeURLBuilder(transactionUrl, barcodeOrPID, properties.get(PROP_NAME_UNIT_ITEM_CODE));
-
-        // create url parts
-        //        String barcodePart1 = properties.get(PROP_NAME_BARCODE).substring(0, 4);
-        //        String barcodePart2 = properties.get(PROP_NAME_BARCODE).substring(4, 8);
-        //        String barcodePart3 = properties.get(PROP_NAME_BARCODE).substring(8, 10);
-        //        String barcodePart4 = "images";
-        //        String barcodeUrl1 = transactionUrl + "/records/" + barcodePart1;
-        //        String barcodeUrl2 = barcodeUrl1 + "/" + barcodePart2;
-        //        String barcodeUrl3 = barcodeUrl2 + "/" + barcodePart3;
-        //        String barcodeUrl4 = barcodeUrl3 + "/" + barcodePart4;
 
         // Transaction that will be rolled back if anything fails
         try {

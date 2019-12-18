@@ -1,12 +1,8 @@
 package de.intranda.goobi.plugins.model;
 
 import java.util.ArrayList;
-import java.util.List;
 
-public class BarcodeURLBuilder implements IURLBuilder {
-
-    private String transactionUrl;
-    private List<String> parts = new ArrayList<>(4);
+public class BarcodeURLBuilder extends AbstractURLBuilder {
 
     /**
      * @param transactionUrl
@@ -26,30 +22,11 @@ public class BarcodeURLBuilder implements IURLBuilder {
 
         this.transactionUrl = transactionUrl;
 
+        parts = new ArrayList<>(4);
         parts.add(barcode.substring(0, 4));
         parts.add(barcode.substring(4, 8));
         parts.add(barcode.substring(8, 10));
         parts.add("images");
-    }
-
-    @Override
-    public List<String> getParts() {
-        return parts;
-    }
-
-    /**
-     * @should return correct value
-     */
-    @Override
-    public String getContainerUrl(int level) {
-        StringBuilder sb = new StringBuilder(transactionUrl + "/records");
-        for (int i = 0; i <= level; ++i) {
-            if (i >= parts.size()) {
-                break;
-            }
-            sb.append('/').append(parts.get(i));
-        }
-        return sb.toString();
     }
 
     /**
@@ -67,16 +44,14 @@ public class BarcodeURLBuilder implements IURLBuilder {
     public String getImageContainerUrl() {
         return getContainerUrl(3);
     }
-
-    /**
-     * @should return correct value
-     */
-    @Override
-    public String getImageContainerUrlPart() {
-        StringBuilder sb = new StringBuilder();
-        for (String part : parts) {
-            sb.append('/').append(part);
-        }
-        return sb.toString();
-    }
+    
+    // create url parts
+    //        String barcodePart1 = properties.get(PROP_NAME_BARCODE).substring(0, 4);
+    //        String barcodePart2 = properties.get(PROP_NAME_BARCODE).substring(4, 8);
+    //        String barcodePart3 = properties.get(PROP_NAME_BARCODE).substring(8, 10);
+    //        String barcodePart4 = "images";
+    //        String barcodeUrl1 = transactionUrl + "/records/" + barcodePart1;
+    //        String barcodeUrl2 = barcodeUrl1 + "/" + barcodePart2;
+    //        String barcodeUrl3 = barcodeUrl2 + "/" + barcodePart3;
+    //        String barcodeUrl4 = barcodeUrl3 + "/" + barcodePart4;
 }
