@@ -57,6 +57,7 @@ import de.sub.goobi.helper.exceptions.DAOException;
 import de.sub.goobi.helper.exceptions.ExportFileException;
 import de.sub.goobi.helper.exceptions.SwapException;
 import de.sub.goobi.helper.exceptions.UghHelperException;
+import de.sub.goobi.persistence.managers.PropertyManager;
 import de.unigoettingen.sub.commons.contentlib.exceptions.ImageManagerException;
 import de.unigoettingen.sub.commons.contentlib.imagelib.ImageManager;
 import net.xeoh.plugins.base.annotations.PluginImplementation;
@@ -485,6 +486,13 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             if (!success) {
                 log.info("Rolling back transaction...");
                 ingestLocation.path("fcr:tx").path("fcr:rollback").request().post(null);
+            } else {
+                // Write record container URL as new process property
+                Processproperty processProp = new Processproperty();
+                processProp.setProzess(process);
+                processProp.setTitel("root SAMS URL");
+                processProp.setWert(urlBuilder.getRecordContainerUrl());
+                PropertyManager.saveProcessProperty(processProp);
             }
         }
     }
