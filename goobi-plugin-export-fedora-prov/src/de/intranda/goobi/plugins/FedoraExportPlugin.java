@@ -490,7 +490,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                 // Write record container URL as new process property
                 Processproperty processProp = new Processproperty();
                 processProp.setProzess(process);
-                processProp.setTitel("root SAMS URL");
+                processProp.setTitel("root_SAMS_URL");
                 processProp.setWert(urlBuilder.getRecordContainerUrl());
                 PropertyManager.saveProcessProperty(processProp);
             }
