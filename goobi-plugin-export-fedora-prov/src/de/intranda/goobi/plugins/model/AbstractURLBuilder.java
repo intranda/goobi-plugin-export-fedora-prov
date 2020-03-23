@@ -4,7 +4,7 @@ import java.util.List;
 
 public abstract class AbstractURLBuilder implements IURLBuilder {
     
-    protected String transactionUrl;
+    protected String fedoraRestUrl;
     protected List<String> parts;
     
     /**
@@ -13,7 +13,7 @@ public abstract class AbstractURLBuilder implements IURLBuilder {
      */
     @Override
     public String getContainerUrl(int level) {
-        StringBuilder sb = new StringBuilder(transactionUrl + "/records");
+        StringBuilder sb = new StringBuilder(fedoraRestUrl + "/records");
         for (int i = 0; i <= level; ++i) {
             if (i >= parts.size()) {
                 break;

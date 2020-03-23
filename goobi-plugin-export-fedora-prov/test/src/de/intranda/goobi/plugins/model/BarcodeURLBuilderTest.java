@@ -11,8 +11,8 @@ public class BarcodeURLBuilderTest {
      */
     @Test
     public void getRecordContainerUrl_shouldReturnCorrectValue() throws Exception {
-        IURLBuilder builder = new BarcodeURLBuilder("https://example.com", "1234567890", "foo");
-        Assert.assertEquals("https://example.com/records/1234/5678/90", builder.getRecordContainerUrl());
+        IURLBuilder builder = new BarcodeURLBuilder("https://example.com/rest", "1234567890", "foo");
+        Assert.assertEquals("https://example.com/rest/records/1234/5678/90", builder.getRecordContainerUrl());
     }
 
     /**
@@ -21,7 +21,7 @@ public class BarcodeURLBuilderTest {
      */
     @Test
     public void getImageContainerUrl_shouldReturnCorrectValue() throws Exception {
-        IURLBuilder builder = new BarcodeURLBuilder("https://example.com", "1234567890", "foo");
-        Assert.assertEquals("https://example.com/records/1234/5678/90/images", builder.getImageContainerUrl());
+        IURLBuilder builder = new BarcodeURLBuilder("https://example.com/rest", "1234567890", "foo");
+        Assert.assertEquals("https://example.com/rest/records/1234/5678/90/images", builder.getImageContainerUrl());
     }
 }

@@ -237,8 +237,8 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
         String transactionUrl = transactionResponse.getHeaderString("location");
         WebTarget ingestLocation = client.target(transactionUrl);
 
-        IURLBuilder urlBuilder = usePID ? new PIDURLBuilder(transactionUrl, barcodeOrPID)
-                : new BarcodeURLBuilder(transactionUrl, barcodeOrPID, properties.get(PROP_NAME_UNIT_ITEM_CODE));
+        IURLBuilder urlBuilder = usePID ? new PIDURLBuilder(fedoraUrl, barcodeOrPID)
+                : new BarcodeURLBuilder(fedoraUrl, barcodeOrPID, properties.get(PROP_NAME_UNIT_ITEM_CODE));
 
         // Transaction that will be rolled back if anything fails
         try {

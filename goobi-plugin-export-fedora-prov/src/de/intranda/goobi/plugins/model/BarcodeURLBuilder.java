@@ -5,13 +5,13 @@ import java.util.ArrayList;
 public class BarcodeURLBuilder extends AbstractURLBuilder {
 
     /**
-     * @param transactionUrl
+     * @param fedoraRestUrl
      * @param barcode
      * @param unitItemCode
      */
-    public BarcodeURLBuilder(String transactionUrl, String barcode, String unitItemCode) {
-        if (transactionUrl == null) {
-            throw new IllegalArgumentException("transactionUrl may not be null");
+    public BarcodeURLBuilder(String fedoraRestUrl, String barcode, String unitItemCode) {
+        if (fedoraRestUrl == null) {
+            throw new IllegalArgumentException("fedoraRestUrl may not be null");
         }
         if (barcode == null || barcode.length() < 10) {
             throw new IllegalArgumentException("barcode must be 10 digits long");
@@ -20,7 +20,7 @@ public class BarcodeURLBuilder extends AbstractURLBuilder {
             throw new IllegalArgumentException("unitItemCode may not be null");
         }
 
-        this.transactionUrl = transactionUrl;
+        this.fedoraRestUrl = fedoraRestUrl;
 
         parts = new ArrayList<>(4);
         parts.add(barcode.substring(0, 4));

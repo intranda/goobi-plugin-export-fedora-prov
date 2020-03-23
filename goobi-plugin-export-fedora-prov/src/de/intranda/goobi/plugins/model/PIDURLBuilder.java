@@ -8,15 +8,15 @@ public class PIDURLBuilder extends AbstractURLBuilder {
      * 
      * @param pid
      */
-    public PIDURLBuilder(String transactionUrl, String pid) {
-        if (transactionUrl == null) {
-            throw new IllegalArgumentException("transactionUrl may not be null");
+    public PIDURLBuilder(String fedoraRestUrl, String pid) {
+        if (fedoraRestUrl == null) {
+            throw new IllegalArgumentException("fedoraRestUrl may not be null");
         }
         if (pid == null || pid.length() != 36) {
             throw new IllegalArgumentException("barcode must be 36 digits long");
         }
 
-        this.transactionUrl = transactionUrl;
+        this.fedoraRestUrl = fedoraRestUrl;
 
         parts = new ArrayList<>(6);
         parts.add(pid.substring(0, 2));
