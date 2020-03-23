@@ -27,15 +27,12 @@ import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.http.HttpEntity;
-import org.apache.http.auth.AuthScope;
-import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.client.CredentialsProvider;
 import org.apache.http.client.entity.EntityBuilder;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPatch;
 import org.apache.http.client.methods.HttpPut;
 import org.apache.http.entity.ContentType;
-import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
@@ -49,6 +46,9 @@ import org.goobi.production.plugin.interfaces.IPlugin;
 import org.joda.time.format.DateTimeFormat;
 import org.joda.time.format.DateTimeFormatter;
 
+import de.intranda.goobi.plugins.model.BarcodeURLBuilder;
+import de.intranda.goobi.plugins.model.IURLBuilder;
+import de.intranda.goobi.plugins.model.PIDURLBuilder;
 import de.sub.goobi.config.ConfigPlugins;
 import de.sub.goobi.helper.Helper;
 import de.sub.goobi.helper.NIOFileUtils;
@@ -57,6 +57,7 @@ import de.sub.goobi.helper.exceptions.DAOException;
 import de.sub.goobi.helper.exceptions.ExportFileException;
 import de.sub.goobi.helper.exceptions.SwapException;
 import de.sub.goobi.helper.exceptions.UghHelperException;
+import de.sub.goobi.persistence.managers.PropertyManager;
 import de.unigoettingen.sub.commons.contentlib.exceptions.ImageManagerException;
 import de.unigoettingen.sub.commons.contentlib.imagelib.ImageManager;
 import net.xeoh.plugins.base.annotations.PluginImplementation;
@@ -75,6 +76,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
     private static final String PLUGIN_NAME = "prov_export_fedora";
 
     private static final String PROP_NAME_BARCODE = "barcode";
+    //    private static final String PROP_NAME_PID = "PID";
     private static final String PROP_NAME_UNIT_ITEM_CODE = "unit_Item_code";
     private static final String PROP_NAME_FULL_PARTIAL = "full_partial";
     private static final String PROP_NAME_AVAILABLE = "available";
@@ -125,6 +127,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
      */
     private boolean ingestData(Process process, String destination) {
         boolean success = false;
+        boolean usePID = false;
 
         // get workflow name from properties
         String workflowName = null;
@@ -151,6 +154,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
         String password = myconfig.getString("password");
 
         String externalLinkContent = myconfig.getString("externalLinkContent");
+        String externalLinkContentPID = myconfig.getString("externalLinkContentPID");
         String fullPartialContent = myconfig.getString("fullPartialContent");
         String availableMetadataQuery = myconfig.getString("availableMetadataQuery");
         String filesContainerMetadataQuery = myconfig.getString("filesContainerMetadataQuery");
@@ -170,15 +174,27 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             properties.put(prop.getTitel(), prop.getWert());
         }
 
-        if (properties.get(PROP_NAME_BARCODE) == null) {
+        String barcodeOrPID = properties.get(PROP_NAME_BARCODE);
+        //        if (barcodeOrPID == null) {
+        //            barcodeOrPID = properties.get(PROP_NAME_PID);
+        //        }
+        if (barcodeOrPID == null) {
             Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
-                    "The ingest into Fedora was not successful as no barcode could be found in the properties.");
+                    "The ingest into Fedora was not successful as no barcode or PID could be found in the properties.");
             Helper.setFehlerMeldung(null, process.getTitel() + ": ",
-                    "The ingest into Fedora was not successful as no barcode could be found in the properties.");
+                    "The ingest into Fedora was not successful as no barcode or PID could be found in the properties.");
             return false;
         }
+        if (barcodeOrPID.length() == 36) {
+            usePID = true;
+            log.info("Using PID");
+            Helper.addMessageToProcessLog(process.getId(), LogType.INFO, "PID detected: " + barcodeOrPID);
+        } else {
+            log.info("Using barcode");
+            Helper.addMessageToProcessLog(process.getId(), LogType.INFO, "Barcode detected: " + barcodeOrPID);
+        }
 
-        if (properties.get(PROP_NAME_UNIT_ITEM_CODE) == null || properties.get(PROP_NAME_UNIT_ITEM_CODE).length() == 0) {
+        if (!usePID && StringUtils.isEmpty(properties.get(PROP_NAME_UNIT_ITEM_CODE))) {
             Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                     "The ingest into Fedora was not successful as no type could be found in the properties.");
             Helper.setFehlerMeldung(null, process.getTitel() + ": ",
@@ -186,8 +202,10 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             return false;
         }
 
-        properties.put(PROP_NAME_UNIT_ITEM_CODE, properties.get(PROP_NAME_UNIT_ITEM_CODE).toUpperCase().substring(0, 1)
-                + properties.get(PROP_NAME_UNIT_ITEM_CODE).toLowerCase().substring(1));
+        if (StringUtils.isNotEmpty(properties.get(PROP_NAME_UNIT_ITEM_CODE))) {
+            properties.put(PROP_NAME_UNIT_ITEM_CODE, properties.get(PROP_NAME_UNIT_ITEM_CODE).toUpperCase().substring(0, 1)
+                    + properties.get(PROP_NAME_UNIT_ITEM_CODE).toLowerCase().substring(1));
+        }
 
         // JAX-WS HTTP client
         Client client = ClientBuilder.newClient();
@@ -219,22 +237,14 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
         String transactionUrl = transactionResponse.getHeaderString("location");
         WebTarget ingestLocation = client.target(transactionUrl);
 
-        // create url parts
-        String barcodePart1 = properties.get(PROP_NAME_BARCODE).substring(0, 4);
-        String barcodePart2 = properties.get(PROP_NAME_BARCODE).substring(4, 8);
-        String barcodePart3 = properties.get(PROP_NAME_BARCODE).substring(8, 10);
-        String barcodePart4 = "images";
-        String barcodeUrl1 = transactionUrl + "/records/" + barcodePart1;
-        String barcodeUrl2 = barcodeUrl1 + "/" + barcodePart2;
-        String barcodeUrl3 = barcodeUrl2 + "/" + barcodePart3;
-        String barcodeUrl4 = barcodeUrl3 + "/" + barcodePart4;
+        IURLBuilder urlBuilder = usePID ? new PIDURLBuilder(fedoraUrl, barcodeOrPID)
+                : new BarcodeURLBuilder(fedoraUrl, barcodeOrPID, properties.get(PROP_NAME_UNIT_ITEM_CODE));
 
         // Transaction that will be rolled back if anything fails
         try {
             // If not using versioning remove resource prior to ingesting to speed things up
             if (!useVersioning) {
-                WebTarget recordContainer =
-                        ingestLocation.path("records/" + barcodePart1 + "/" + barcodePart2 + "/" + barcodePart3 + "/" + barcodePart4);
+                WebTarget recordContainer = ingestLocation.path("records" + urlBuilder.getImageContainerUrlPart());
                 if (!deleteResource(process, recordContainer)) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                             "The ingest into Fedora was not successful as the previous container could not be deleted for "
@@ -247,44 +257,21 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             }
 
             // Create the required container hierarchy for the process identifier
-            boolean containerCreated = createContainer(barcodeUrl1, userName, password);
-            if (!containerCreated) {
-                Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
-                        "The ingest into Fedora was not successful (container creation for " + barcodeUrl1 + ")");
-                Helper.setFehlerMeldung(null, process.getTitel() + ": ",
-                        "The ingest into Fedora was not successful as the container could not be created for " + barcodeUrl1);
-                return false;
-            }
-            containerCreated = createContainer(barcodeUrl2, userName, password);
-            if (!containerCreated) {
-                Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
-                        "The ingest into Fedora was not successful (container creation for " + barcodeUrl2 + ")");
-                Helper.setFehlerMeldung(null, process.getTitel() + ": ",
-                        "The ingest into Fedora was not successful as the container could not be created for " + barcodeUrl2);
-                return false;
-            }
-            containerCreated = createContainer(barcodeUrl3, userName, password);
-            if (!containerCreated) {
-                Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
-                        "The ingest into Fedora was not successful (container creation for " + barcodeUrl3 + ")");
-                Helper.setFehlerMeldung(null, process.getTitel() + ": ",
-                        "The ingest into Fedora was not successful as the container could not be created for " + barcodeUrl3);
-                return false;
-            }
-
-            containerCreated = createContainer(barcodeUrl4, userName, password);
-            if (!containerCreated) {
-                Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
-                        "The ingest into Fedora was not successful (container creation for " + barcodeUrl4 + ")");
-                Helper.setFehlerMeldung(null, process.getTitel() + ": ",
-                        "The ingest into Fedora was not successful as the container could not be created for " + barcodeUrl4);
-                return false;
+            for (int i = 0; i < urlBuilder.getParts().size(); ++i) {
+                boolean containerCreated = createContainer(urlBuilder.getContainerUrl(i), userName, password);
+                if (!containerCreated) {
+                    Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
+                            "The ingest into Fedora was not successful (container creation for " + urlBuilder.getContainerUrl(i) + ")");
+                    Helper.setFehlerMeldung(null, process.getTitel() + ": ",
+                            "The ingest into Fedora was not successful as the container could not be created for " + urlBuilder.getContainerUrl(i));
+                    return false;
+                }
             }
 
             // Name for the new version, if using versioning
             String version = useVersioning ? "goobi-export." + formatter.print(System.currentTimeMillis()) : null;
 
-            WebTarget recordUrl = ingestLocation.path("records").path(barcodePart1 + "/" + barcodePart2 + "/" + barcodePart3 + "/" + barcodePart4); // URL for the record folder
+            WebTarget recordUrl = ingestLocation.path("records").path(urlBuilder.getImageContainerUrlPart()); // URL for the record folder
             log.debug("record url: " + recordUrl.getUri().toString());
 
             // now ingest all content files by order
@@ -333,9 +320,9 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
 
                 // create container for this image
                 String iValue = String.valueOf(i + 1);
-                String imageNumberUrl = barcodeUrl4 + "/" + iValue;
+                String imageNumberUrl = urlBuilder.getImageContainerUrl() + "/" + iValue;
                 String filesUrl = imageNumberUrl + "/files";
-                containerCreated = createContainer(imageNumberUrl, userName, password);
+                boolean containerCreated = createContainer(imageNumberUrl, userName, password);
                 if (!containerCreated) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                             "The ingest into Fedora was not successful (container creation for " + imageNumberUrl + ")");
@@ -415,45 +402,67 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             String imagesContainerMetadataQuery = myconfig.getString("imagesContainerMetadataQuery");
             if (imagesContainerMetadataQuery != null) {
                 log.debug("Adding /images container metadata");
-                if (!addPropertyViaSparql(barcodeUrl4, imagesContainerMetadataQuery.replace("[URL]", barcodeUrl3), userName, password)) {
+                if (!addPropertyViaSparql(urlBuilder.getImageContainerUrl(),
+                        imagesContainerMetadataQuery.replace("[URL]", urlBuilder.getRecordContainerUrl()), userName, password)) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
-                            "The ingest into Fedora was not successful ([URL] property creation for " + barcodeUrl3 + ")");
+                            "The ingest into Fedora was not successful ([URL] property creation for " + urlBuilder.getRecordContainerUrl() + ")");
                     Helper.setFehlerMeldung(null, process.getTitel() + ": ",
-                            "The ingest into Fedora was not successful ([URL] property creation for " + barcodeUrl3 + ")");
+                            "The ingest into Fedora was not successful ([URL] property creation for " + urlBuilder.getRecordContainerUrl() + ")");
                     return false;
                 }
             }
 
             // add crm url
-            if (externalLinkContent != null) {
-                if (!addPropertyViaSparql(barcodeUrl3, externalLinkContent.replace("[BARCODE]", properties.get(PROP_NAME_BARCODE))
-                        .replace("[UNIT_ITEM_CODE]", properties.get(PROP_NAME_UNIT_ITEM_CODE)), userName, password)) {
+            if (!usePID && externalLinkContent != null) {
+                // Barcode + unit item code type
+                if (!addPropertyViaSparql(urlBuilder.getRecordContainerUrl(),
+                        externalLinkContent.replace("[BARCODE]", properties.get(PROP_NAME_BARCODE))
+                                .replace("[UNIT_ITEM_CODE]", properties.get(PROP_NAME_UNIT_ITEM_CODE)),
+                        userName, password)) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
-                            "The ingest into Fedora was not successful ([BARCODE]/[UNIT_ITEM_CODE] property creation for " + barcodeUrl3 + ")");
+                            "The ingest into Fedora was not successful ([BARCODE]/[UNIT_ITEM_CODE] property creation for "
+                                    + urlBuilder.getRecordContainerUrl() + ")");
                     Helper.setFehlerMeldung(null, process.getTitel() + ": ",
-                            "The ingest into Fedora was not successful ([BARCODE]/[UNIT_ITEM_CODE] property creation for " + barcodeUrl3 + ")");
+                            "The ingest into Fedora was not successful ([BARCODE]/[UNIT_ITEM_CODE] property creation for "
+                                    + urlBuilder.getRecordContainerUrl() + ")");
+                    return false;
+                }
+            } else if (usePID && externalLinkContentPID != null) {
+                // PID type
+                if (!addPropertyViaSparql(urlBuilder.getRecordContainerUrl(), externalLinkContent.replace("[PID]", barcodeOrPID), userName,
+                        password)) {
+                    Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
+                            "The ingest into Fedora was not successful ([BARCODE]/[UNIT_ITEM_CODE] property creation for "
+                                    + urlBuilder.getRecordContainerUrl() + ")");
+                    Helper.setFehlerMeldung(null, process.getTitel() + ": ",
+                            "The ingest into Fedora was not successful ([BARCODE]/[UNIT_ITEM_CODE] property creation for "
+                                    + urlBuilder.getRecordContainerUrl() + ")");
                     return false;
                 }
             }
             // add full_partial
             if (fullPartialContent != null && properties.get(PROP_NAME_FULL_PARTIAL) != null) {
-                if (!addPropertyViaSparql(barcodeUrl3, fullPartialContent.replace("[FULL_PARTIAL]", properties.get(PROP_NAME_FULL_PARTIAL)), userName,
-                        password)) {
+                if (!addPropertyViaSparql(urlBuilder.getRecordContainerUrl(),
+                        fullPartialContent.replace("[FULL_PARTIAL]", properties.get(PROP_NAME_FULL_PARTIAL)), userName, password)) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
-                            "The ingest into Fedora was not successful ([FULL_PARTIAL] property creation for " + barcodeUrl3 + ")");
+                            "The ingest into Fedora was not successful ([FULL_PARTIAL] property creation for " + urlBuilder.getRecordContainerUrl()
+                                    + ")");
                     Helper.setFehlerMeldung(null, process.getTitel() + ": ",
-                            "The ingest into Fedora was not successful ([FULL_PARTIAL] property creation for " + barcodeUrl3 + ")");
+                            "The ingest into Fedora was not successful ([FULL_PARTIAL] property creation for " + urlBuilder.getRecordContainerUrl()
+                                    + ")");
                     return false;
                 }
             }
             // add available
             if (availableMetadataQuery != null && properties.get(PROP_NAME_AVAILABLE) != null) {
-                if (!addPropertyViaSparql(barcodeUrl3, availableMetadataQuery.replace("[DATE_AVAILABLE]", properties.get(PROP_NAME_AVAILABLE)),
-                        userName, password)) {
+                if (!addPropertyViaSparql(urlBuilder.getRecordContainerUrl(),
+                        availableMetadataQuery.replace("[DATE_AVAILABLE]", properties.get(PROP_NAME_AVAILABLE)), userName, password)) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
-                            "The ingest into Fedora was not successful ([DATE_AVAILABLE] property creation for " + barcodeUrl3 + ")");
+                            "The ingest into Fedora was not successful ([DATE_AVAILABLE] property creation for " + urlBuilder.getRecordContainerUrl()
+                                    + ")");
                     Helper.setFehlerMeldung(null, process.getTitel() + ": ",
-                            "The ingest into Fedora was not successful ([DATE_AVAILABLE] property creation for " + barcodeUrl3 + ")");
+                            "The ingest into Fedora was not successful ([DATE_AVAILABLE] property creation for " + urlBuilder.getRecordContainerUrl()
+                                    + ")");
                     return false;
                 }
             }
@@ -477,6 +486,13 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             if (!success) {
                 log.info("Rolling back transaction...");
                 ingestLocation.path("fcr:tx").path("fcr:rollback").request().post(null);
+            } else {
+                // Write record container URL as new process property
+                Processproperty processProp = new Processproperty();
+                processProp.setProzess(process);
+                processProp.setTitel("root_SAMS_URL");
+                processProp.setWert(urlBuilder.getRecordContainerUrl());
+                PropertyManager.saveProcessProperty(processProp);
             }
         }
     }
