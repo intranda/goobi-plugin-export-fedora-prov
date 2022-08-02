@@ -105,16 +105,16 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
 
     @Override
     public boolean startExport(Process process) throws IOException, InterruptedException, DocStructHasNoTypeException, PreferencesException,
-            WriteException, MetadataTypeNotAllowedException, ExportFileException, UghHelperException, ReadException, SwapException, DAOException,
-            TypeNotAllowedForParentException {
+    WriteException, MetadataTypeNotAllowedException, ExportFileException, UghHelperException, ReadException, SwapException, DAOException,
+    TypeNotAllowedForParentException {
         String path = new VariableReplacer(null, null, process, null).replace(process.getProjekt().getDmsImportRootPath());
         return startExport(process, path);
     }
 
     @Override
     public boolean startExport(Process process, String destination) throws IOException, InterruptedException, DocStructHasNoTypeException,
-            PreferencesException, WriteException, MetadataTypeNotAllowedException, ExportFileException, UghHelperException, ReadException,
-            SwapException, DAOException, TypeNotAllowedForParentException {
+    PreferencesException, WriteException, MetadataTypeNotAllowedException, ExportFileException, UghHelperException, ReadException,
+    SwapException, DAOException, TypeNotAllowedForParentException {
         return ingestData(process, destination);
     }
 
@@ -417,7 +417,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                 // Barcode + unit item code type
                 if (!addPropertyViaSparql(urlBuilder.getRecordContainerUrl(),
                         externalLinkContent.replace("[BARCODE]", properties.get(PROP_NAME_BARCODE))
-                                .replace("[UNIT_ITEM_CODE]", properties.get(PROP_NAME_UNIT_ITEM_CODE)),
+                        .replace("[UNIT_ITEM_CODE]", properties.get(PROP_NAME_UNIT_ITEM_CODE)),
                         userName, password)) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                             "The ingest into Fedora was not successful ([BARCODE]/[UNIT_ITEM_CODE] property creation for "
@@ -446,10 +446,10 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                         fullPartialContent.replace("[FULL_PARTIAL]", properties.get(PROP_NAME_FULL_PARTIAL)), userName, password)) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                             "The ingest into Fedora was not successful ([FULL_PARTIAL] property creation for " + urlBuilder.getRecordContainerUrl()
-                                    + ")");
+                            + ")");
                     Helper.setFehlerMeldung(null, process.getTitel() + ": ",
                             "The ingest into Fedora was not successful ([FULL_PARTIAL] property creation for " + urlBuilder.getRecordContainerUrl()
-                                    + ")");
+                            + ")");
                     return false;
                 }
             }
@@ -459,10 +459,10 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                         availableMetadataQuery.replace("[DATE_AVAILABLE]", properties.get(PROP_NAME_AVAILABLE)), userName, password)) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                             "The ingest into Fedora was not successful ([DATE_AVAILABLE] property creation for " + urlBuilder.getRecordContainerUrl()
-                                    + ")");
+                            + ")");
                     Helper.setFehlerMeldung(null, process.getTitel() + ": ",
                             "The ingest into Fedora was not successful ([DATE_AVAILABLE] property creation for " + urlBuilder.getRecordContainerUrl()
-                                    + ")");
+                            + ")");
                     return false;
                 }
             }
@@ -474,7 +474,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             Helper.setMeldung(null, process.getTitel() + ": ", "ExportFinished");
             success = true;
             return true;
-        } catch (IOException | DAOException | InterruptedException | SwapException e) {
+        } catch (IOException | DAOException | SwapException e) {
             log.error(e.getMessage(), e);
             Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                     "The ingest into Fedora was not successful and the transaction got rolled back: " + e.getMessage());
@@ -539,7 +539,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             response = recordContainer.request().delete();
             switch (response.getStatus()) {
                 case 204:
-                    // Each deleted resource leaves a tombstone which prevents a resource with the same name from being created, 
+                    // Each deleted resource leaves a tombstone which prevents a resource with the same name from being created,
                     // so the tombstone has to be deleted as well (DELETE operation)
                     response = recordContainer.path("fcr:tombstone").request().delete();
                     switch (response.getStatus()) {
