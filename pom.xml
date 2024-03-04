@@ -7,7 +7,7 @@
     <relativePath />
   </parent>
   <groupId>io.goobi.workflow.plugin</groupId>
-  <artifactId>plugin-export-fedora</artifactId>
+  <artifactId>plugin-export-fedora-prov</artifactId>
   <packaging>pom</packaging>
   <modules>
     <module>module-base</module>
