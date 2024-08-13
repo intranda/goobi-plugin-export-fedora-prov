@@ -29,6 +29,7 @@ The process data can then be retrieved from the repository using the following U
 http(s)://<Fedora REST endpoint>/records/<barcode.substring(0,4)>/<barcode.sunstring(4,8)>/<barcode.substring(8,10)>/
 ```
 
+![Integration of the plugin into the workflow](screen1_en.png)
 
 ## Examples of URLs after successful ingest to Fedora
 

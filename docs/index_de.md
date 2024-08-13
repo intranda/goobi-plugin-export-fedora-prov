@@ -29,6 +29,7 @@ Die Daten des Vorgangs lassen sich anschließend über das folgende URL-Muster i
 http(s)://<Fedora REST endpoint>/records/<barcode.substring(0,4)>/<barcode.sunstring(4,8)>/<barcode.substring(8,10)>/
 ```
 
+![Integration des Plugins in den Workflow](screen1_de.png)
 
 ## Beispiele für die URLs nach erfolgreichem Ingest nach Fedora
 
