@@ -15,8 +15,8 @@ Detail                      | Description
 **Plugin identifier**       | prov_export_fedora
 **Plugin type**             | export
 **Licence**                 | GPL 2.0 or newer
-**Documentation (German)**  | https://docs.goobi.io/workflow-plugins/v/eng/export/goobi-plugin-export-fedora-prov
-**Documentation (English)** | https://docs.goobi.io/workflow-plugins/v/ger/export/goobi-plugin-export-fedora-prov
+**Documentation (German)**  | https://docs.goobi.io/workflow-plugins/v/ger/export/goobi-plugin-export-fedora-prov
+**Documentation (English)** | https://docs.goobi.io/workflow-plugins/v/eng/export/goobi-plugin-export-fedora-prov
 
 ## Goobi details
 
