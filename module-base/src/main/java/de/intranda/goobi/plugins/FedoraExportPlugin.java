@@ -13,12 +13,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import jakarta.ws.rs.client.Client;
-import jakarta.ws.rs.client.ClientBuilder;
-import jakarta.ws.rs.client.Entity;
-import jakarta.ws.rs.client.WebTarget;
-import jakarta.ws.rs.core.Response;
-
 import org.apache.commons.configuration.SubnodeConfiguration;
 import org.apache.commons.configuration.XMLConfiguration;
 import org.apache.commons.configuration.reloading.FileChangedReloadingStrategy;
@@ -37,6 +31,7 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.log4j.Logger;
+import org.goobi.beans.GoobiProperty;
 import org.goobi.beans.Process;
 import org.goobi.beans.Processproperty;
 import org.goobi.production.enums.LogType;
@@ -60,6 +55,11 @@ import de.sub.goobi.helper.exceptions.UghHelperException;
 import de.sub.goobi.persistence.managers.PropertyManager;
 import de.unigoettingen.sub.commons.contentlib.exceptions.ImageManagerException;
 import de.unigoettingen.sub.commons.contentlib.imagelib.ImageManager;
+import jakarta.ws.rs.client.Client;
+import jakarta.ws.rs.client.ClientBuilder;
+import jakarta.ws.rs.client.Entity;
+import jakarta.ws.rs.client.WebTarget;
+import jakarta.ws.rs.core.Response;
 import net.xeoh.plugins.base.annotations.PluginImplementation;
 import ugh.exceptions.DocStructHasNoTypeException;
 import ugh.exceptions.MetadataTypeNotAllowedException;
@@ -105,16 +105,16 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
 
     @Override
     public boolean startExport(Process process) throws IOException, InterruptedException, DocStructHasNoTypeException, PreferencesException,
-    WriteException, MetadataTypeNotAllowedException, ExportFileException, UghHelperException, ReadException, SwapException, DAOException,
-    TypeNotAllowedForParentException {
+            WriteException, MetadataTypeNotAllowedException, ExportFileException, UghHelperException, ReadException, SwapException, DAOException,
+            TypeNotAllowedForParentException {
         String path = new VariableReplacer(null, null, process, null).replace(process.getProjekt().getDmsImportRootPath());
         return startExport(process, path);
     }
 
     @Override
     public boolean startExport(Process process, String destination) throws IOException, InterruptedException, DocStructHasNoTypeException,
-    PreferencesException, WriteException, MetadataTypeNotAllowedException, ExportFileException, UghHelperException, ReadException,
-    SwapException, DAOException, TypeNotAllowedForParentException {
+            PreferencesException, WriteException, MetadataTypeNotAllowedException, ExportFileException, UghHelperException, ReadException,
+            SwapException, DAOException, TypeNotAllowedForParentException {
         return ingestData(process, destination);
     }
 
@@ -131,8 +131,8 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
 
         // get workflow name from properties
         String workflowName = null;
-        for (Processproperty pp : process.getEigenschaften()) {
-            if (pp.getTitel().equals("Template")) {
+        for (GoobiProperty pp : process.getProperties()) {
+            if ("Template".equals(pp.getTitel())) {
                 workflowName = pp.getWert();
             }
         }
@@ -167,7 +167,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
 
         Map<String, String> properties = new HashMap<>(4);
         // get the barcode from the property list
-        for (Processproperty prop : process.getEigenschaftenList()) {
+        for (GoobiProperty prop : process.getEigenschaftenList()) {
             if (prop.getTitel() == null) {
                 continue;
             }
@@ -417,7 +417,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                 // Barcode + unit item code type
                 if (!addPropertyViaSparql(urlBuilder.getRecordContainerUrl(),
                         externalLinkContent.replace("[BARCODE]", properties.get(PROP_NAME_BARCODE))
-                        .replace("[UNIT_ITEM_CODE]", properties.get(PROP_NAME_UNIT_ITEM_CODE)),
+                                .replace("[UNIT_ITEM_CODE]", properties.get(PROP_NAME_UNIT_ITEM_CODE)),
                         userName, password)) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                             "The ingest into Fedora was not successful ([BARCODE]/[UNIT_ITEM_CODE] property creation for "
@@ -446,10 +446,10 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                         fullPartialContent.replace("[FULL_PARTIAL]", properties.get(PROP_NAME_FULL_PARTIAL)), userName, password)) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                             "The ingest into Fedora was not successful ([FULL_PARTIAL] property creation for " + urlBuilder.getRecordContainerUrl()
-                            + ")");
+                                    + ")");
                     Helper.setFehlerMeldung(null, process.getTitel() + ": ",
                             "The ingest into Fedora was not successful ([FULL_PARTIAL] property creation for " + urlBuilder.getRecordContainerUrl()
-                            + ")");
+                                    + ")");
                     return false;
                 }
             }
@@ -459,10 +459,10 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                         availableMetadataQuery.replace("[DATE_AVAILABLE]", properties.get(PROP_NAME_AVAILABLE)), userName, password)) {
                     Helper.addMessageToProcessLog(process.getId(), LogType.ERROR,
                             "The ingest into Fedora was not successful ([DATE_AVAILABLE] property creation for " + urlBuilder.getRecordContainerUrl()
-                            + ")");
+                                    + ")");
                     Helper.setFehlerMeldung(null, process.getTitel() + ": ",
                             "The ingest into Fedora was not successful ([DATE_AVAILABLE] property creation for " + urlBuilder.getRecordContainerUrl()
-                            + ")");
+                                    + ")");
                     return false;
                 }
             }
@@ -513,9 +513,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
         try (ImageManager im = new ImageManager(imageFile.toUri())) {
             ret[0] = im.getMyInterpreter().getWidth();
             ret[1] = im.getMyInterpreter().getHeight();
-        } catch (ImageManagerException e) {
-            log.error(e.getMessage(), e);
-        } catch (FileNotFoundException e) {
+        } catch (ImageManagerException | FileNotFoundException e) {
             log.error(e.getMessage(), e);
         }
 
@@ -809,7 +807,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
         return null;
     }
 
-    private static final DirectoryStream.Filter<Path> ImageAndPdfFilter = new DirectoryStream.Filter<Path>() {
+    private static final DirectoryStream.Filter<Path> ImageAndPdfFilter = new DirectoryStream.Filter<>() {
         @Override
         public boolean accept(Path path) {
             boolean fileOk = false;
