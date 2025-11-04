@@ -3,6 +3,10 @@ title: Fedora Export PROV
 identifier: prov_export_fedora
 published: true
 description: Goobi plugin for exporting Goobi processes to a Fedora repository for the Victoria Public Record Office
+keywords:
+    - Goobi workflow
+    - Plugin
+    - Export Plugin
 ---
 ## Introduction
 This documentation describes the installation, configuration and use of the Fedora Export Plugin in Goobi workflow.
