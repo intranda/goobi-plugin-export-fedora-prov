@@ -8,6 +8,8 @@ public interface IURLBuilder {
 
     public String getContainerUrl(int level);
     
+    public String getContainerName(int level);
+    
     public String getRecordContainerUrl();
     
     public String getImageContainerUrl();

@@ -3,10 +3,10 @@ package de.intranda.goobi.plugins.model;
 import java.util.List;
 
 public abstract class AbstractURLBuilder implements IURLBuilder {
-    
+
     protected String fedoraRestUrl;
     protected List<String> parts;
-    
+
     /**
      * @should return correct value for barcodes
      * @should return correct value for PIDs
@@ -22,7 +22,12 @@ public abstract class AbstractURLBuilder implements IURLBuilder {
         }
         return sb.toString();
     }
-    
+
+    @Override
+    public String getContainerName(int level) {
+        return parts.size() > level ? parts.get(level) : null;
+    }
+
     /**
      * @should return correct value for barcodes
      * @should return correct value for PIDs

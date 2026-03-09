@@ -8,7 +8,7 @@
 		<workflow>*</workflow>
 
 		<!-- general Fedora configuration data -->
-		<fedoraUrl>https://localhost:8888/fedora/rest</fedoraUrl>
+		<fedoraUrl>https://localhost:8888/fcrepo/rest</fedoraUrl>
 		<useVersioning>false</useVersioning>
 		<!-- Basic HTTP authentication user name (optional) -->
 		<userName></userName>
