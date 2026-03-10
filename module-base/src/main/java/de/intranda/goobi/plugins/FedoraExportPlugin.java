@@ -213,9 +213,8 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                     + properties.get(PROP_NAME_UNIT_ITEM_CODE).toLowerCase().substring(1));
         }
 
-        String transactionUrl = null;
-        WebTarget ingestLocationBase = null;
-        WebTarget ingestLocationTransaction = null;
+        IURLBuilder urlBuilder = usePID ? new PIDURLBuilder(fedoraUrl, barcodeOrPID)
+                : new BarcodeURLBuilder(fedoraUrl, barcodeOrPID, properties.get(PROP_NAME_UNIT_ITEM_CODE));
 
         // JAX-WS HTTP client
         try (Client client = ClientBuilder.newClient()) {
@@ -226,62 +225,43 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             }
             WebTarget fedoraBase = client.target(fedoraUrl);
 
-            // Create a new transaction in Fedora (POST operation)
-            log.debug("Creating transaction: " + fedoraBase.path("fcr:tx").getUri());
-            Response transactionResponse = null;
-            try {
-                transactionResponse = fedoraBase.path("fcr:tx").request().post(null);
-                if (transactionResponse == null) {
-                    Helper.addMessageToProcessJournal(process.getId(), LogType.ERROR, "No transaction response" + " - " + fedoraUrl);
-                    Helper.setFehlerMeldung(null, "500", "No transaction response - " + fedoraUrl);
+            // If not using versioning remove resource prior to ingesting to speed things up
+            if (!useVersioning) {
+                WebTarget recordContainer = fedoraBase.path("records" + urlBuilder.getImageContainerUrlPart());
+                String deleteTransactionUrl = createTransaction(fedoraBase, process.getId(), process.getTitel());
+                if (deleteTransactionUrl == null) {
+                    log.error("Deletion transaction could not be opened.");
                     return false;
                 }
-                if (transactionResponse.getStatus() >= 400) {
-                    log.debug("HTTP status: " + transactionResponse.getStatus());
+                if (deleteResource(process, recordContainer, deleteTransactionUrl)) {
+                    // Commit deletion transaction before creating anything new
+                    client.target(deleteTransactionUrl).request().put(Entity.entity("", MediaType.TEXT_PLAIN));
+                } else {
                     Helper.addMessageToProcessJournal(process.getId(), LogType.ERROR,
-                            transactionResponse.getStatusInfo().getReasonPhrase() + " - " + fedoraUrl);
-                    Helper.setFehlerMeldung(null, String.valueOf(transactionResponse.getStatus()),
-                            transactionResponse.getStatusInfo().getReasonPhrase() + " - " + fedoraUrl);
+                            "The ingest into Fedora was not successful as the previous container could not be deleted for "
+                                    + recordContainer.getUri().toString());
+                    Helper.setFehlerMeldung(null, process.getTitel() + ": ",
+                            "The ingest into Fedora was not successful as the previous container could not be deleted for "
+                                    + recordContainer.getUri().toString());
                     return false;
                 }
-            } catch (Exception e) {
-                Helper.addMessageToProcessJournal(process.getId(), LogType.ERROR, "The ingest into Fedora was not successful: " + e.getMessage());
-                Helper.setFehlerMeldung(null, process.getTitel() + ": ", "The ingest into Fedora was not successful: " + e.getMessage());
-                log.error(e.getMessage(), e);
-                return false;
             }
 
-            // The base URL to work with
-            transactionUrl = transactionResponse.getHeaderString("Location");
-            log.debug("Transaction URL: " + transactionUrl);
-            ingestLocationTransaction = client.target(transactionUrl);
-            ingestLocationBase = client.target(fedoraUrl);
-
-            if (transactionUrl == null || ingestLocationTransaction == null) {
+            String transactionUrl = createTransaction(fedoraBase, process.getId(), process.getTitel());
+            if (transactionUrl == null) {
                 Helper.addMessageToProcessJournal(process.getId(), LogType.ERROR,
                         "The ingest into Fedora was not successful: No transaction ID received.");
                 Helper.setFehlerMeldung(null, process.getTitel() + ": ", "The ingest into Fedora was not successful: No transaction ID received.");
                 return false;
             }
-
-            IURLBuilder urlBuilder = usePID ? new PIDURLBuilder(fedoraUrl, barcodeOrPID)
-                    : new BarcodeURLBuilder(fedoraUrl, barcodeOrPID, properties.get(PROP_NAME_UNIT_ITEM_CODE));
+            log.debug("Transaction URL: " + transactionUrl);
+            // Base URL
+            WebTarget ingestLocationBase = client.target(fedoraUrl);
+            // URL including transaction ID
+            WebTarget ingestLocationTransaction = client.target(transactionUrl);
 
             // Transaction that will be rolled back if anything fails
             try {
-                // If not using versioning remove resource prior to ingesting to speed things up
-                if (!useVersioning) {
-                    WebTarget recordContainer = ingestLocationBase.path("records" + urlBuilder.getImageContainerUrlPart());
-                    if (!deleteResource(process, recordContainer, transactionUrl)) {
-                        Helper.addMessageToProcessJournal(process.getId(), LogType.ERROR,
-                                "The ingest into Fedora was not successful as the previous container could not be deleted for "
-                                        + recordContainer.getUri().toString());
-                        Helper.setFehlerMeldung(null, process.getTitel() + ": ",
-                                "The ingest into Fedora was not successful as the previous container could not be deleted for "
-                                        + recordContainer.getUri().toString());
-                        return false;
-                    }
-                }
 
                 // Create the required container hierarchy for the process identifier
                 log.debug("Creating container hierarchy");
@@ -573,17 +553,19 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
     public boolean deleteResource(Process process, WebTarget recordContainer, String transactionUrl) {
         log.debug("deleteResource: " + recordContainer.getUri());
         if (StringUtils.isEmpty(transactionUrl)) {
-            throw new org.jboss.weld.exceptions.IllegalArgumentException("transactionUrl may not me empty");
+            throw new IllegalArgumentException("transactionUrl may not me empty");
         }
 
         // Check whether the container for this record already exists (GET operation returns 200 if exists)
-        Response response = recordContainer.request().get();
+        Response response = recordContainer.request().header(HEADER_NAME_ATOMIC_ID, transactionUrl).get();
         if (response.getStatus() == 200) {
             log.debug("Record container already exists: " + recordContainer.getUri().toString());
             // Delete the container (DELETE operation)
             response = recordContainer.request().header(HEADER_NAME_ATOMIC_ID, transactionUrl).delete();
+            log.debug("Delete response code: " + response.getStatus());
             switch (response.getStatus()) {
                 case 204:
+                case 410:
                     // Each deleted resource leaves a tombstone which prevents a resource with the same name from being created,
                     // so the tombstone has to be deleted as well (DELETE operation)
                     response = recordContainer.path("fcr:tombstone").request().header(HEADER_NAME_ATOMIC_ID, transactionUrl).delete();
@@ -613,6 +595,45 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             }
         }
         return true;
+    }
+
+    /**
+     * 
+     * @param fedoraBase
+     * @param processId
+     * @param processTitle
+     * @return
+     */
+    private static String createTransaction(WebTarget fedoraBase, int processId, String processTitle) {
+        if (fedoraBase == null) {
+            throw new IllegalArgumentException("fedoraBase may not be null");
+        }
+
+        // Create a new transaction in Fedora (POST operation)
+        log.debug("Creating transaction: " + fedoraBase.path("fcr:tx").getUri());
+        Response transactionResponse = null;
+        try {
+            transactionResponse = fedoraBase.path("fcr:tx").request().post(null);
+            if (transactionResponse == null) {
+                Helper.addMessageToProcessJournal(processId, LogType.ERROR, "No transaction response" + " - " + fedoraBase.getUri().toString());
+                Helper.setFehlerMeldung(null, "500", "No transaction response - " + fedoraBase.getUri().toString());
+                return null;
+            }
+            if (transactionResponse.getStatus() >= 400) {
+                log.debug("HTTP status: " + transactionResponse.getStatus());
+                Helper.addMessageToProcessJournal(processId, LogType.ERROR,
+                        transactionResponse.getStatusInfo().getReasonPhrase() + " - " + fedoraBase.getUri().toString());
+                Helper.setFehlerMeldung(null, String.valueOf(transactionResponse.getStatus()),
+                        transactionResponse.getStatusInfo().getReasonPhrase() + " - " + fedoraBase.getUri().toString());
+                return null;
+            }
+            return transactionResponse.getHeaderString("Location");
+        } catch (Exception e) {
+            Helper.addMessageToProcessJournal(processId, LogType.ERROR, "The ingest into Fedora was not successful: " + e.getMessage());
+            Helper.setFehlerMeldung(null, processTitle + ": ", "The ingest into Fedora was not successful: " + e.getMessage());
+            log.error(e.getMessage(), e);
+            return null;
+        }
     }
 
     /**
@@ -798,8 +819,12 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
         // post.setHeader("Content-Type", "text/turtle");
         // post.setEntity(new StringEntity("<> a <http://www.w3.org/ns/ldp#BasicContainer> .", StandardCharsets.UTF_8));
 
-        log.debug("REQUEST URI: " + post.getURI());
-        log.debug("Atomic-ID: " + post.getFirstHeader(HEADER_NAME_ATOMIC_ID));
+        // log.debug("REQUEST URI: " + post.getURI());
+        // log.debug("Atomic-ID: " + post.getFirstHeader(HEADER_NAME_ATOMIC_ID));
+
+        //        if ("files".equals(containerName) || "images".equals(containerName) || "sequence".equals(containerName)) {
+        //            post.setHeader("Link", "<http://www.w3.org/ns/ldp#DirectContainer>; rel=\"type\"");
+        //        }
 
         try (CloseableHttpClient httpClient =
                 provider != null ? HttpClientBuilder.create().setDefaultCredentialsProvider(provider).build() : HttpClients.createMinimal();
@@ -838,7 +863,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
      * @return
      */
     private static boolean addPropertyViaSparql(String rootUrl, String content, String transactionUrl, String userName, String password) {
-        log.debug("addPropertyViaSparql: " + rootUrl + '\n' + content);
+        // log.debug("addPropertyViaSparql: " + rootUrl + '\n' + content);
         HttpPatch put = new HttpPatch(rootUrl);
         ContentType ct = ContentType.create("application/sparql-update");
         HttpEntity he = EntityBuilder.create().setText(content).setContentType(ct).build();
