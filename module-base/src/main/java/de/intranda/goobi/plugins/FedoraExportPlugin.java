@@ -378,24 +378,20 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                     // ingest master
                     if (ingestMaster && masterFile != null) {
                         fileUrl = addFileResource(masterFile, target.path(masterFile.getFileName().toString()), version, transactionUrl, fedoraUrl);
-                        // ingestLocation.path("fcr:tx").request().post(null);
                         imageDimensions = getImageDimensions(masterFile);
                     }
                     // ingest media
                     if (ingestMedia && mediaFile != null) {
                         fileUrl = addFileResource(mediaFile, target.path(mediaFile.getFileName().toString()), version, transactionUrl, fedoraUrl);
-                        // ingestLocation.path("fcr:tx").request().post(null);
                         imageDimensions = getImageDimensions(mediaFile);
                     }
                     // ingest pdf
                     if (ingestPdf && pdfFile != null) {
                         fileUrl = addFileResource(pdfFile, target.path(pdfFile.getFileName().toString()), version, transactionUrl, fedoraUrl);
-                        // ingestLocation.path("fcr:tx").request().post(null);
                     }
                     // ingest jp2
                     if (ingestJp2 && jp2File != null) {
                         fileUrl = addFileResource(jp2File, target.path(jp2File.getFileName().toString()), version, transactionUrl, fedoraUrl);
-                        // ingestLocation.path("fcr:tx").request().post(null);
                         imageDimensions = getImageDimensions(jp2File);
                     }
 
@@ -445,13 +441,13 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                     }
                 } else if (usePID && externalLinkContentPID != null) {
                     // PID type
-                    if (!addPropertyViaSparql(urlBuilder.getRecordContainerUrl(), externalLinkContent.replace("[PID]", barcodeOrPID), transactionUrl,
+                    if (!addPropertyViaSparql(urlBuilder.getRecordContainerUrl(), externalLinkContentPID.replace("[PID]", barcodeOrPID), transactionUrl,
                             userName, password)) {
                         Helper.addMessageToProcessJournal(process.getId(), LogType.ERROR,
-                                "The ingest into Fedora was not successful ([BARCODE]/[UNIT_ITEM_CODE] property creation for "
+                                "The ingest into Fedora was not successful ([PID] property creation for "
                                         + urlBuilder.getRecordContainerUrl() + ")");
                         Helper.setFehlerMeldung(null, process.getTitel() + ": ",
-                                "The ingest into Fedora was not successful ([BARCODE]/[UNIT_ITEM_CODE] property creation for "
+                                "The ingest into Fedora was not successful ([PID] property creation for "
                                         + urlBuilder.getRecordContainerUrl() + ")");
                         return false;
                     }
