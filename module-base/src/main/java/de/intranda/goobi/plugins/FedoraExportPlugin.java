@@ -28,6 +28,7 @@ import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPatch;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.ContentType;
+import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.client.HttpClients;
@@ -159,12 +160,6 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
         String userName = myconfig.getString("userName");
         String password = myconfig.getString("password");
 
-        String externalLinkContent = myconfig.getString("externalLinkContent");
-        String externalLinkContentPID = myconfig.getString("externalLinkContentPID");
-        String fullPartialContent = myconfig.getString("fullPartialContent");
-        String availableMetadataQuery = myconfig.getString("availableMetadataQuery");
-        String filesContainerMetadataQuery = myconfig.getString("filesContainerMetadataQuery");
-        String imageFileMetadataQuery = myconfig.getString("imageFileMetadataQuery");
         boolean useVersioning = myconfig.getBoolean("useVersioning", true);
         boolean ingestMaster = myconfig.getBoolean("ingestMaster", true);
         boolean ingestMedia = myconfig.getBoolean("ingestMedia", true);
@@ -352,7 +347,8 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                         return false;
                     }
 
-                    // add /files container membership metadata
+                    // add /files container membership metadata (must be added at creation time now; do not use old queries!)
+                    String filesContainerMetadataQuery = myconfig.getString("filesContainerMetadataQuery");
                     if (filesContainerMetadataQuery != null) {
                         log.debug("Adding /files container metadata for file " + i);
                         if (!addPropertyViaSparql(filesUrl, filesContainerMetadataQuery.replace("[URL]", imageNumberUrl), transactionUrl, userName,
@@ -395,6 +391,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                         imageDimensions = getImageDimensions(jp2File);
                     }
 
+                    String imageFileMetadataQuery = myconfig.getString("imageFileMetadataQuery");
                     if (fileUrl != null && imageFileMetadataQuery != null) {
                         log.info("Adding image dimensions metadata for file " + i);
                         if (!addPropertyViaSparql(fileUrl + "/fcr:metadata",
@@ -410,7 +407,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                     }
                 }
 
-                // Add /image container membership metadata
+                // Add /image container membership metadata (must be added at creation time now; do not use old queries!)
                 String imagesContainerMetadataQuery = myconfig.getString("imagesContainerMetadataQuery");
                 if (imagesContainerMetadataQuery != null) {
                     log.info("Adding /images container metadata");
@@ -425,6 +422,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                 }
 
                 // add crm url
+                String externalLinkContent = myconfig.getString("externalLinkContent");
                 if (!usePID && externalLinkContent != null) {
                     // Barcode + unit item code type
                     if (!addPropertyViaSparql(urlBuilder.getRecordContainerUrl(),
@@ -439,9 +437,11 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                                         + urlBuilder.getRecordContainerUrl() + ")");
                         return false;
                     }
-                } else if (usePID && externalLinkContentPID != null) {
+                } else if (usePID && myconfig.getString("externalLinkContentPID") != null) {
                     // PID type
-                    if (!addPropertyViaSparql(urlBuilder.getRecordContainerUrl(), externalLinkContentPID.replace("[PID]", barcodeOrPID), transactionUrl,
+                    String externalLinkContentPID = myconfig.getString("externalLinkContentPID");
+                    if (!addPropertyViaSparql(urlBuilder.getRecordContainerUrl(), externalLinkContentPID.replace("[PID]", barcodeOrPID),
+                            transactionUrl,
                             userName, password)) {
                         Helper.addMessageToProcessJournal(process.getId(), LogType.ERROR,
                                 "The ingest into Fedora was not successful ([PID] property creation for "
@@ -453,6 +453,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                     }
                 }
                 // add full_partial
+                String fullPartialContent = myconfig.getString("fullPartialContent");
                 if (fullPartialContent != null && properties.get(PROP_NAME_FULL_PARTIAL) != null) {
                     if (!addPropertyViaSparql(urlBuilder.getRecordContainerUrl(),
                             fullPartialContent.replace("[FULL_PARTIAL]", properties.get(PROP_NAME_FULL_PARTIAL)), transactionUrl, userName,
@@ -469,6 +470,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
                     }
                 }
                 // add available
+                String availableMetadataQuery = myconfig.getString("availableMetadataQuery");
                 if (availableMetadataQuery != null && properties.get(PROP_NAME_AVAILABLE) != null) {
                     if (!addPropertyViaSparql(urlBuilder.getRecordContainerUrl(),
                             availableMetadataQuery.replace("[DATE_AVAILABLE]", properties.get(PROP_NAME_AVAILABLE)), transactionUrl, userName,
@@ -811,16 +813,25 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
         // Fedora 6: attach transaction via Atomic-ID header
         post.setHeader(HEADER_NAME_ATOMIC_ID, transactionUrl);
 
-        // Recommended: explicitly declare LDP container type
-        // post.setHeader("Content-Type", "text/turtle");
-        // post.setEntity(new StringEntity("<> a <http://www.w3.org/ns/ldp#BasicContainer> .", StandardCharsets.UTF_8));
-
         // log.debug("REQUEST URI: " + post.getURI());
         // log.debug("Atomic-ID: " + post.getFirstHeader(HEADER_NAME_ATOMIC_ID));
 
-        //        if ("files".equals(containerName) || "images".equals(containerName) || "sequence".equals(containerName)) {
-        //            post.setHeader("Link", "<http://www.w3.org/ns/ldp#DirectContainer>; rel=\"type\"");
-        //        }
+        // Fedora 6: Set DirectContainer type at creation type
+        if (isDirectContainer(containerName)) {
+            post.setHeader("Link", "<http://www.w3.org/ns/ldp#DirectContainer>; rel=\"type\"");
+
+            // Member relation properties must be added at creation time (otherwise it will add empty properties that cannot be replaced)
+            String memberRelation = getMemberRelation(containerName);
+            if (memberRelation != null) {
+                post.setHeader("Content-Type", "text/turtle");
+                String body =
+                        "@prefix ldp: <http://www.w3.org/ns/ldp#> .\n" +
+                                "@prefix pcdm: <http://pcdm.org/models#> .\n\n" +
+                                "<> ldp:membershipResource <" + parentUrl + "> ;\n" +
+                                "   ldp:hasMemberRelation " + memberRelation + " .";
+                post.setEntity(new StringEntity(body, StandardCharsets.UTF_8));
+            }
+        }
 
         try (CloseableHttpClient httpClient =
                 provider != null ? HttpClientBuilder.create().setDefaultCredentialsProvider(provider).build() : HttpClients.createMinimal();
@@ -847,6 +858,31 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
         }
 
         return true;
+    }
+
+    /**
+     * 
+     * @param name Container name
+     * @return true if container with the given name should be a DirectContainer; false otherwise
+     */
+    private static boolean isDirectContainer(String name) {
+        return "files".equals(name) || "images".equals(name) || "sequence".equals(name);
+    }
+
+    /**
+     * 
+     * @param name Container name
+     * @return Value for ldp:hasMemberRelation
+     */
+    private static String getMemberRelation(String name) {
+        switch (name) {
+            case "files":
+                return "pcdm:hasFile";
+            case "images":
+                return "pcdm:hasMember";
+            default:
+                return null; // e.g. "sequence" has no membership config
+        }
     }
 
     /**

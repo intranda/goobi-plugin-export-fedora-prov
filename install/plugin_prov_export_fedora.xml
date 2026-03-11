@@ -52,6 +52,7 @@
 		</availableMetadataQuery>
 
 		<!-- Properties query for the /images container -->
+        <!--
 		<imagesContainerMetadataQuery>
 			PREFIX ldp: &lt;http://www.w3.org/ns/ldp#&gt;
 			PREFIX pcdm: &lt;http://pcdm.org/models#&gt;
@@ -62,8 +63,10 @@
 			}
 			WHERE { }
 		</imagesContainerMetadataQuery>
+        -->
 
 		<!-- Properties query for the /files container -->
+        <!--
 		<filesContainerMetadataQuery>
 			PREFIX ldp: &lt;http://www.w3.org/ns/ldp#&gt;
 			PREFIX pcdm: &lt;http://pcdm.org/models#&gt;
@@ -74,6 +77,7 @@
 			}
 			WHERE { }
 		</filesContainerMetadataQuery>
+        -->
 
 		<!-- Properties query for the /fcr:metadata part of a file -->
 		<imageFileMetadataQuery>
