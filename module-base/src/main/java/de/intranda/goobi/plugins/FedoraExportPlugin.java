@@ -373,21 +373,21 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
 
                     // ingest master
                     if (ingestMaster && masterFile != null) {
-                        fileUrl = addFileResource(masterFile, target.path(masterFile.getFileName().toString()), version, transactionUrl, fedoraUrl);
+                        fileUrl = addFileResource(masterFile, target.path(masterFile.getFileName().toString()), transactionUrl);
                         imageDimensions = getImageDimensions(masterFile);
                     }
                     // ingest media
                     if (ingestMedia && mediaFile != null) {
-                        fileUrl = addFileResource(mediaFile, target.path(mediaFile.getFileName().toString()), version, transactionUrl, fedoraUrl);
+                        fileUrl = addFileResource(mediaFile, target.path(mediaFile.getFileName().toString()), transactionUrl);
                         imageDimensions = getImageDimensions(mediaFile);
                     }
                     // ingest pdf
                     if (ingestPdf && pdfFile != null) {
-                        fileUrl = addFileResource(pdfFile, target.path(pdfFile.getFileName().toString()), version, transactionUrl, fedoraUrl);
+                        fileUrl = addFileResource(pdfFile, target.path(pdfFile.getFileName().toString()), transactionUrl);
                     }
                     // ingest jp2
                     if (ingestJp2 && jp2File != null) {
-                        fileUrl = addFileResource(jp2File, target.path(jp2File.getFileName().toString()), version, transactionUrl, fedoraUrl);
+                        fileUrl = addFileResource(jp2File, target.path(jp2File.getFileName().toString()), transactionUrl);
                         imageDimensions = getImageDimensions(jp2File);
                     }
 
@@ -489,6 +489,34 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
 
                 // Finish the entire ingest by committing the transaction
                 ingestLocationTransaction.request().put(Entity.entity("", MediaType.TEXT_PLAIN));
+
+                // Version must be added outside of a transaction
+                if (version != null) {
+                    for (int i = 0; i < max; i++) {
+                        WebTarget target = recordUrl.path((i + 1) + "/files"); // URL for the folder with the correct image number
+                        try {
+                            if (ingestMaster && masterFileList.size() > i) {
+                                Path masterFile = masterFileList.get(i);
+                                createVersion(target.path(masterFile.getFileName().toString()), version);
+                            }
+                            if (ingestMedia && mediaFileList.size() > i) {
+                                Path mediaFile = mediaFileList.get(i);
+                                createVersion(target.path(mediaFile.getFileName().toString()), version);
+                            }
+                            if (ingestJp2 && jp2FileList.size() > i) {
+                                Path jp2File = jp2FileList.get(i);
+                                createVersion(target.path(jp2File.getFileName().toString()), version);
+                            }
+                            if (ingestPdf && pdfFileList.size() > i) {
+                                Path pdfFile = pdfFileList.get(i);
+                                createVersion(target.path(pdfFile.getFileName().toString()), version);
+                            }
+                        } catch (IndexOutOfBoundsException ioc) {
+                            // nothing happens here
+                        }
+                    }
+                }
+
                 log.info("Ingest of '" + process.getTitel() + "' successfully finished.");
                 Helper.addMessageToProcessJournal(process.getId(), LogType.INFO, "Ingest into Fedora successfully finished.");
                 Helper.setMeldung(null, process.getTitel() + ": ", "ExportFinished");
@@ -639,13 +667,11 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
      * 
      * @param file File to add
      * @param target Target URL containing the transaction ID
-     * @param version Version name, if using versioning; otherwise null
      * @param transactionUrl Transaction URL prefix used to remove transaction IDs from the final file location URL
-     * @param fedoraUrl
      * @return File location URL in Fedora
      * @throws IOException
      */
-    private static String addFileResource(Path file, WebTarget target, String version, String transactionUrl, String fedoraUrl) throws IOException {
+    private static String addFileResource(Path file, WebTarget target, String transactionUrl) throws IOException {
         if (file == null) {
             throw new IllegalArgumentException("file may not be null");
         }
@@ -653,14 +679,7 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             throw new IllegalArgumentException("target may not be null");
         }
 
-        // Check resource existence
-        boolean exists = false;
-        Response response = target.request().get();
-        if (response.getStatus() == 200) {
-            exists = true;
-            log.debug("Resource already exists: " + target.getUri().toURL().toString().replace(transactionUrl, fedoraUrl));
-        }
-
+        // Create HTTP entity from the file
         try (InputStream inputStream = new FileInputStream(file.toFile())) {
             // Determine mime type using Java NIO
             String mimeType = Files.probeContentType(file);
@@ -670,116 +689,80 @@ public class FedoraExportPlugin implements IExportPlugin, IPlugin {
             }
             // Manual fallback for Macs (using the file extension)
             if (mimeType == null) {
-                String extension = FilenameUtils.getExtension(file.getFileName().toString());
-                if (extension != null) {
-                    switch (extension.toLowerCase()) {
-                        case "tif":
-                        case "tiff":
-                            mimeType = "image/tiff";
-                            break;
-                        case "jpg":
-                        case "jpeg":
-                            mimeType = "image/jpeg";
-                            break;
-                        case "jp2":
-                            mimeType = "image/jp2";
-                            break;
-                        case "png":
-                            mimeType = "image/png";
-                            break;
-                        case "pdf":
-                            mimeType = "application/pdf";
-                            break;
-                        case "xml":
-                            mimeType = "text/xml";
-                            break;
-                        default:
-                            mimeType = "text/html";
-                            break;
-                    }
-                    log.debug("Manually determined mime type: " + mimeType);
-                }
+                mimeType = guessMimeTypeFromExtension(file);
             }
-            // Create HTTP entity from the file
-            Entity<InputStream> fileEntity = Entity.entity(inputStream, mimeType);
-            if (exists) {
-                if (version != null) {
-                    // Add new version (POST operation)
-                    // "Slug" is the version name attribute
-                    // "Content-Disposition" attribute contains the file name
-                    response = target.path("fcr:versions")
-                            .request()
-                            .header(HEADER_NAME_ATOMIC_ID, transactionUrl)
-                            .header("Slug", version)
-                            .header("Content-Disposition", "attachment; filename=\"" + file.getFileName().toString() + "\"")
-                            .post(Entity.entity(inputStream, mimeType));
-                } else {
-                    // No versioning: Delete file so it can be replaced (DELETE operation)
-                    // TODO This part is obsolete because the entire container is now deleted if it
-                    // already exists (much faster)
-                    response = target.request().header(HEADER_NAME_ATOMIC_ID, transactionUrl).delete();
-                    if (response.getStatus() != 204) {
-                        // Error
-                        String body = response.readEntity(String.class);
-                        String msg = response.getStatus() + ": " + response.getStatusInfo().getReasonPhrase() + " - " + body;
-                        log.error(msg);
-                        log.error(body);
-                        throw new IOException(msg);
-                    }
-                    // Delete tombstone (DELETE operation)
-                    response = target.path("fcr:tombstone").request().delete();
-                    if (response.getStatus() == 204) {
-                        // Add file again (PUT operation)
-                        // "Content-Disposition" attribute contains the file name
-                        response = target.request()
-                                .header(HEADER_NAME_ATOMIC_ID, transactionUrl)
-                                .header("Content-Disposition", "attachment; filename=\"" + file.getFileName().toString() + "\"")
-                                .put(fileEntity);
-                    } else {
-                        // Error
-                        String body = response.readEntity(String.class);
-                        String msg = response.getStatus() + ": " + response.getStatusInfo().getReasonPhrase() + " - " + body;
-                        log.error(msg);
-                        log.error(body);
-                        throw new IOException(msg);
-                    }
-                }
-            } else {
-                // File does not exist yet, so just add it (PUT operation)
-                // "Content-Disposition" attribute contains the file name
-                response = target.request()
-                        .header(HEADER_NAME_ATOMIC_ID, transactionUrl)
-                        .header("Content-Disposition", "attachment; filename=\"" + file.getFileName().toString() + "\"")
-                        .put(fileEntity);
-            }
-            // Handle response to the file adding operation (both versioned or not)
-            switch (response.getStatus()) {
-                case 201:
-                    if (exists) {
-                        if (version != null) {
-                            // Successfully added new version
-                            log.debug("New resource version " + version + " added: "
-                                    + response.getHeaderString("location").replace(transactionUrl, fedoraUrl));
-                        } else {
-                            // Successfully deleted and re-added file
-                            log.debug("Resource updated: " + response.getHeaderString("Location").replace(transactionUrl, fedoraUrl));
-                        }
-                    } else {
-                        // Added completely new file
-                        log.debug("New resource added: " + response.getHeaderString("Location").replace(transactionUrl, fedoraUrl));
-                    }
-                    break;
-                default:
-                    // Error
-                    String body = response.readEntity(String.class);
-                    log.error(body);
-                    throw new IOException(response.getStatus() + ": " + response.getStatusInfo().getReasonPhrase());
+            Entity<InputStream> entity = Entity.entity(inputStream, mimeType);
+
+            Response response = target.request()
+                    .header(HEADER_NAME_ATOMIC_ID, transactionUrl)
+                    .header("Content-Disposition",
+                            "attachment; filename=\"" + file.getFileName() + "\"")
+                    .put(entity);
+
+            if (response.getStatus() != 201 && response.getStatus() != 204) {
+                String body = response.readEntity(String.class);
+                throw new IOException(response.getStatus() + ": " +
+                        response.getStatusInfo().getReasonPhrase() + " - " + body);
             }
 
-            return response.getHeaderString("location");
-        } finally {
-            response.close();
+            return response.getHeaderString("Location");
         }
+    }
+
+    /**
+     * 
+     * @param file
+     * @return Determined mime type; null if file has no extension
+     */
+    private static String guessMimeTypeFromExtension(Path file) {
+        String mimeType = null;
+        String extension = FilenameUtils.getExtension(file.getFileName().toString());
+        if (extension != null) {
+            switch (extension.toLowerCase()) {
+                case "tif":
+                case "tiff":
+                    mimeType = "image/tiff";
+                    break;
+                case "jpg":
+                case "jpeg":
+                    mimeType = "image/jpeg";
+                    break;
+                case "jp2":
+                    mimeType = "image/jp2";
+                    break;
+                case "png":
+                    mimeType = "image/png";
+                    break;
+                case "pdf":
+                    mimeType = "application/pdf";
+                    break;
+                case "xml":
+                    mimeType = "text/xml";
+                    break;
+                default:
+                    mimeType = "text/html";
+                    break;
+            }
+            log.debug("Manually determined mime type: " + mimeType);
+        }
+
+        return mimeType;
+    }
+
+    private static void createVersion(WebTarget target, String versionLabel) throws IOException {
+        log.debug("createVersion: " + target.getUri() + "/fcr:versions?versionLabel=" + versionLabel);
+        Response response = target.path("fcr:versions")
+                .queryParam("versionLabel", versionLabel)
+                .request()
+                .post(null);
+
+        if (response.getStatus() != 201) {
+            String body = response.readEntity(String.class);
+            throw new IOException(response.getStatus() + ": " +
+                    response.getStatusInfo().getReasonPhrase() + " - " + body);
+        }
+
+        log.debug("Version created: " + versionLabel);
     }
 
     /**
